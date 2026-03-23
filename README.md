@@ -7,7 +7,7 @@ A compiled Rust CLI that keeps the [VSCode Project Manager](https://marketplace.
 `vscode-pmu` scans a root directory (default: `~/Projects`) for git repositories and reconciles them into VSCode's `projects.json`. Two modes:
 
 - **On-demand** — run `vscode-pmu scan` or `vscode-pmu refresh` manually
-- **Daemon** — run `vscode-pmu install` to register a launchd agent that starts at login and watches for filesystem changes in real time
+- **Daemon** — run `vscode-pmu daemon install` to register a launchd agent that starts at login and watches for filesystem changes in real time
 
 ### Directory scanning
 
@@ -21,13 +21,31 @@ The scanner walks `<root>` up to **6 levels deep**. The following directories ar
 
 ### Tag derivation
 
-The first path segment after `<root>` becomes the project tag in VSCode Project Manager:
+Tags are derived automatically from each project's path using a two-step algorithm.
 
-| Path | Tag |
-|---|---|
-| `<root>/github/org/repo` | `github` |
-| `<root>/gitlab/group/sub/repo` | `gitlab` |
-| `<root>/my-repo` (direct child) | _(none)_ |
+**Step 1 — trie-based pass-through detection**
+
+A prefix trie is built across all discovered paths. For each project, the algorithm walks its own branch and skips any segment whose subtree fans out to exactly one distinct next-level segment (i.e. the segment is a pass-through with no branching value). The VCS host (first segment after `<root>`) is always skipped. The remaining intermediate segments — between the skipped prefix and the project directory name — become the tags.
+
+| Path | Trie result | Tags |
+|---|---|---|
+| `<root>/github/org/repo` | host skipped, `org` diverges | `org` |
+| `<root>/github/repo` | host skipped, no intermediates | `github` _(fallback)_ |
+| `<root>/my-repo` | direct child of root | _(none)_ |
+
+When one branch is deeper than another the algorithm handles each independently, so projects under a shallow host get simpler tags while deeply nested ones get richer tags.
+
+**Step 2 — per-host skip floor (optional)**
+
+If the trie-derived depth is shallower than desired (e.g. because an organisational namespace contains multiple children that would otherwise appear as tags), you can set a minimum skip depth per host:
+
+```sh
+vscode-pmu config set-skip gitlab 3
+```
+
+The effective skip is `max(trie_derived, configured_floor)`. This keeps organisational prefixes out of tags without hardcoding any path values in the source code.
+
+See the [`config`](#config-set-skip--config-show) commands for details.
 
 ### Cache
 
@@ -115,6 +133,7 @@ Commands:
   refresh           Invalidate cache and force a full re-scan
   daemon <ACTION>   Manage the launchd background daemon
   hooks <ACTION>    Manage the git post-checkout hook
+  config <ACTION>   Manage per-host tag skip depth configuration
 ```
 
 The `--root` flag is global and can be placed before or after the subcommand:
@@ -194,6 +213,41 @@ vscode-pmu hooks remove    # remove hook and unset init.templateDir
 
 > **Note:** `daemon` and `hooks` are independent — you can use either or both.
 
+### config set-skip / config show
+
+Manages per-host minimum skip depths, stored in `~/.config/vscode-pmu/config.toml`.
+
+```sh
+vscode-pmu config set-skip <host> <depth>   # set minimum skip for a host
+vscode-pmu config show                       # print current configuration
+```
+
+**Example** — skip the first 3 path segments for all `gitlab` projects (host + 2 organisational namespace levels):
+
+```sh
+vscode-pmu config set-skip gitlab 3
+vscode-pmu config show
+# Config file: /Users/you/.config/vscode-pmu/config.toml
+# host_skip:
+#   gitlab = 3
+```
+
+The config file is plain TOML and can be edited directly:
+
+```toml
+[host_skip]
+gitlab = 3
+github = 1
+```
+
+After changing the config, run `vscode-pmu refresh` to retag all managed projects.
+
+| Path | Config | Effective skip | Tags |
+|---|---|---|---|
+| `gitlab/org/ns/team/repo` | `gitlab = 3` | 3 | `team` |
+| `gitlab/org/ns/infra/images/app` | `gitlab = 3` | 3 | `infra`, `images` |
+| `github/my-repo` | `github = 1` | 1 | `github` _(fallback)_ |
+
 ## projects.json
 
 Located at:
@@ -209,7 +263,7 @@ A backup is written as `projects.json.bak` before every write. Each managed entr
   "name": "repo",
   "rootPath": "/Users/you/Projects/github/org/repo",
   "paths": [],
-  "tags": ["github"],
+  "tags": ["org"],
   "enabled": true,
   "profile": ""
 }
@@ -230,9 +284,10 @@ vscode-project-manager-updater/
     └── commands/
         └── pm/
             ├── mod.rs        # CLI definition and dispatch
-            ├── scan.rs       # walkdir scan + filter logic
+            ├── scan.rs       # walkdir scan + trie-based tag derivation
             ├── cache.rs      # 24h path cache (~/.cache/vscode-pmu/)
-            ├── projects.rs   # projects.json read/write + add/remove
+            ├── projects.rs   # projects.json read/write + tag algorithm
+            ├── config.rs     # per-host skip config (~/.config/vscode-pmu/)
             ├── watch.rs      # notify-based file watcher
             ├── launchd.rs    # launchd plist install/uninstall
             └── hook.rs       # git post-checkout hook init/eject
