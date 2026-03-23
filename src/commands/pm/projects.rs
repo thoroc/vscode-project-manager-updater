@@ -171,8 +171,16 @@ fn trie_skip_depth(
         // trie[segs[..=i]] gives the sub-level children of segs[i].
         match trie.get(&segs[..=i]) {
             Some(children) if children.len() == 1 => {
-                // Only one sub-level forward → structural pass-through.
-                skip = i + 1;
+                // One sub-level forward — but only a pure pass-through when
+                // there are *no* direct leaf projects at this level.
+                // If leaf_count > 0 the node is a mixed group (some repos
+                // live here directly, others nest deeper) and is meaningful.
+                let direct = leaf_count.get(&segs[..=i]).copied().unwrap_or(0);
+                if direct == 0 {
+                    skip = i + 1;
+                } else {
+                    break;
+                }
             }
             None => {
                 // segs[i] is a leaf-group: projects are its direct children.
@@ -420,6 +428,22 @@ mod tests {
         let map = path_skip_map(&paths, root);
         assert_eq!(map["/Projects/github/group-a/repo-a"], 2);
         assert_eq!(map["/Projects/github/group-b/repo-b"], 2);
+    }
+
+    #[test]
+    fn skip_depth_1_when_group_has_direct_and_nested_projects() {
+        // group has direct repos AND one nested sub-group (mixed).
+        // Must NOT be treated as a pass-through even though the trie has one child.
+        let root = std::path::Path::new("/Projects");
+        let paths = vec![
+            "/Projects/github/group/repo-a".to_string(),        // direct leaf
+            "/Projects/github/group/repo-b".to_string(),        // direct leaf
+            "/Projects/github/group/sub-group/repo-c".to_string(), // nested
+        ];
+        let map = path_skip_map(&paths, root);
+        assert_eq!(map["/Projects/github/group/repo-a"], 1);
+        assert_eq!(map["/Projects/github/group/repo-b"], 1);
+        assert_eq!(map["/Projects/github/group/sub-group/repo-c"], 1);
     }
 
     #[test]
