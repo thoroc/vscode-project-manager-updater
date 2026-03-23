@@ -1,0 +1,102 @@
+pub mod cache;
+pub mod hook;
+pub mod launchd;
+pub mod projects;
+pub mod scan;
+pub mod watch;
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+fn default_root() -> PathBuf {
+    dirs::home_dir()
+        .expect("no home dir")
+        .join("Projects")
+}
+
+#[derive(Parser)]
+#[command(
+    name = "vscode-pmu",
+    about = "Manage VSCode Project Manager projects.json",
+    arg_required_else_help = true,
+    version
+)]
+pub struct Cli {
+    /// Root directory to scan for git repositories.
+    /// Defaults to ~/Projects.
+    #[arg(long, value_name = "DIR", global = true)]
+    pub root: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub subcommand: Subcommands,
+}
+
+#[derive(Subcommand)]
+pub enum Subcommands {
+    /// Scan <root> and update projects.json (uses cache if fresh)
+    Scan,
+    /// Add a git repository; prompts for path if not provided
+    Add {
+        /// Path to the git repository
+        path: Option<PathBuf>,
+    },
+    /// Remove a project; shows a pick-list if name not provided
+    Remove {
+        /// Name of the project to remove
+        name: Option<String>,
+    },
+    /// Invalidate cache and force a full re-scan
+    Refresh,
+    /// Manage the launchd background daemon
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
+    /// Manage the git post-checkout hook
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
+    /// Watch <root> for filesystem changes (used internally by the daemon)
+    #[command(hide = true)]
+    Watch,
+}
+
+#[derive(Subcommand)]
+pub enum DaemonAction {
+    /// Install and start the launchd agent
+    Install,
+    /// Stop and remove the launchd agent
+    Remove,
+}
+
+#[derive(Subcommand)]
+pub enum HooksAction {
+    /// Write the post-checkout hook and set git init.templateDir
+    Install,
+    /// Remove the post-checkout hook and unset git init.templateDir
+    Remove,
+}
+
+pub fn run(cli: Cli) -> Result<()> {
+    let root = cli.root.unwrap_or_else(default_root);
+    match cli.subcommand {
+        Subcommands::Scan => scan::run_scan(&root),
+        Subcommands::Add { path } => projects::add(path.as_deref(), &root),
+        Subcommands::Remove { name } => projects::remove(name.as_deref(), &root),
+        Subcommands::Refresh => {
+            cache::delete(&root)?;
+            scan::run_scan(&root)
+        }
+        Subcommands::Daemon { action } => match action {
+            DaemonAction::Install => launchd::install(),
+            DaemonAction::Remove => launchd::remove(),
+        },
+        Subcommands::Hooks { action } => match action {
+            HooksAction::Install => hook::install(),
+            HooksAction::Remove => hook::remove(),
+        },
+        Subcommands::Watch => watch::run_watch(&root),
+    }
+}
