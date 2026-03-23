@@ -22,14 +22,13 @@ const DEFAULT_TEMPLATE: &str = r#"# vscode-pmu configuration
 #
 # [tag_rename]
 # Rename derived tags before they are written to projects.json.
-# Use to replace technical path segments (e.g. a GitHub username) with
-# human-friendly labels.
+# The key is the display label; the value is a list of raw path segments
+# that should map to it. Multiple segments can share one label.
 #
-# Example: tag every project under github/<username>/… as "personal"
-# instead of the raw username.
+# Example: tag every project under github/<username>/… as "personal":
 #
 # [tag_rename]
-# thoroc = "personal"
+# personal = ["<your-github-username>"]
 #
 # [host_skip]
 # Set a minimum number of path segments to skip per VCS host when deriving
@@ -59,8 +58,9 @@ pub struct Config {
     #[serde(default)]
     pub max_depth: Option<usize>,
     /// Renames applied to derived tags before they are written to `projects.json`.
+    /// Key is the display label; value is the list of raw path segments that map to it.
     #[serde(default)]
-    pub tag_rename: HashMap<String, String>,
+    pub tag_rename: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub host_skip: HashMap<String, usize>,
 }
@@ -72,9 +72,17 @@ impl Config {
     }
 
     /// Applies `tag_rename` substitutions to a list of derived tags.
+    ///
+    /// The config maps `display_label = ["raw_seg", …]`; this builds the
+    /// reverse lookup (`raw_seg → display_label`) at call time.
     pub fn rename_tags(&self, tags: Vec<String>) -> Vec<String> {
+        // Build reverse map: raw segment → display label
+        let reverse: HashMap<&str, &str> = self.tag_rename
+            .iter()
+            .flat_map(|(label, sources)| sources.iter().map(move |src| (src.as_str(), label.as_str())))
+            .collect();
         tags.into_iter()
-            .map(|t| self.tag_rename.get(&t).cloned().unwrap_or(t))
+            .map(|t| reverse.get(t.as_str()).map(|&s| s.to_owned()).unwrap_or(t))
             .collect()
     }
 
@@ -143,8 +151,10 @@ pub fn run_show() -> Result<()> {
         println!("tag_rename:");
         let mut entries: Vec<_> = cfg.tag_rename.iter().collect();
         entries.sort_by_key(|(k, _)| k.as_str());
-        for (from, to) in entries {
-            println!("  {} = \"{}\"", from, to);
+        for (label, sources) in entries {
+            let mut srcs = sources.clone();
+            srcs.sort();
+            println!("  {} = {:?}", label, srcs);
         }
     }
     if cfg.host_skip.is_empty() {
@@ -195,33 +205,42 @@ mod tests {
     #[test]
     fn rename_tags_passes_through_when_map_empty() {
         let cfg = Config::default();
-        let tags = vec!["thoroc".to_string(), "github".to_string()];
+        let tags = vec!["user1".to_string(), "github".to_string()];
         assert_eq!(cfg.rename_tags(tags.clone()), tags);
     }
 
     #[test]
     fn rename_tags_substitutes_matching_entry() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("thoroc".to_string(), "personal".to_string());
-        let result = cfg.rename_tags(vec!["thoroc".to_string()]);
+        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string()]);
+        let result = cfg.rename_tags(vec!["user1".to_string()]);
         assert_eq!(result, vec!["personal".to_string()]);
+    }
+
+    #[test]
+    fn rename_tags_multiple_sources_map_to_one_label() {
+        let mut cfg = Config::default();
+        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string(), "user2".to_string()]);
+        let result = cfg.rename_tags(vec!["user1".to_string(), "user2".to_string()]);
+        assert_eq!(result, vec!["personal".to_string(), "personal".to_string()]);
     }
 
     #[test]
     fn rename_tags_leaves_unmatched_tags_unchanged() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("thoroc".to_string(), "personal".to_string());
-        let result = cfg.rename_tags(vec!["thoroc".to_string(), "acme".to_string()]);
+        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string()]);
+        let result = cfg.rename_tags(vec!["user1".to_string(), "acme".to_string()]);
         assert_eq!(result, vec!["personal".to_string(), "acme".to_string()]);
     }
 
     #[test]
     fn tag_rename_round_trips_toml() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("thoroc".to_string(), "personal".to_string());
+        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string(), "user2".to_string()]);
         let s = toml::to_string_pretty(&cfg).unwrap();
         let loaded: Config = toml::from_str(&s).unwrap();
-        assert_eq!(loaded.rename_tags(vec!["thoroc".to_string()]), vec!["personal".to_string()]);
+        assert_eq!(loaded.rename_tags(vec!["user1".to_string()]), vec!["personal".to_string()]);
+        assert_eq!(loaded.rename_tags(vec!["user2".to_string()]), vec!["personal".to_string()]);
     }
 
     #[test]

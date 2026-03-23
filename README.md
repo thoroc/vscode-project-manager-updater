@@ -245,21 +245,27 @@ The config file is plain TOML and can be edited directly:
 max_depth = 6
 
 # Rename derived tags before they are written to projects.json.
+# Key = display label, value = list of raw path segments that map to it.
 [tag_rename]
-thoroc = "personal"
+personal = ["<your-username>"]
 
 [host_skip]
 gitlab = 3
 github = 1
 ```
 
-**`[tag_rename]`** — Substitutes tag values after derivation. Useful when a path segment such as a personal GitHub username should appear as a friendlier label (e.g. `personal`) in the VSCode Project Manager UI.
+**`[tag_rename]`** — Substitutes tag values after derivation. The key is the display label; the value is a list of raw path segments that should map to it. Multiple segments (e.g. different usernames across hosts) can share one label.
+
+```toml
+[tag_rename]
+personal = ["<username-a>", "<username-b>"]
+```
 
 | Path | Derived tag | After rename |
 |---|---|---|
-| `github/thoroc/odysseus` | `thoroc` | `personal` |
-| `github/thoroc/nx-plugin` | `thoroc` | `personal` |
-| `github/Noovolari/leapp` | `Noovolari` | _(unchanged)_ |
+| `github/<username-a>/repo` | `<username-a>` | `personal` |
+| `github/<username-b>/repo` | `<username-b>` | `personal` |
+| `github/some-org/repo` | `some-org` | _(unchanged)_ |
 
 After changing the config, run `vscode-pmu refresh` to retag all managed projects and pick up the new scan depth.
 
