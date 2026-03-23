@@ -221,7 +221,7 @@ vscode-pmu hooks remove    # remove hook and unset init.templateDir
 
 ### config set-skip / config show
 
-Manages per-host minimum skip depths, stored in `~/.config/vscode-pmu/config.toml`.
+Manages tag derivation settings, stored in `~/.config/vscode-pmu/config.toml`.
 
 ```sh
 vscode-pmu config set-skip <host> <depth>   # set minimum skip for a host
@@ -244,10 +244,22 @@ The config file is plain TOML and can be edited directly:
 # How many directory levels to scan below <root> (default: 6).
 max_depth = 6
 
+# Rename derived tags before they are written to projects.json.
+[tag_rename]
+thoroc = "personal"
+
 [host_skip]
 gitlab = 3
 github = 1
 ```
+
+**`[tag_rename]`** — Substitutes tag values after derivation. Useful when a path segment such as a personal GitHub username should appear as a friendlier label (e.g. `personal`) in the VSCode Project Manager UI.
+
+| Path | Derived tag | After rename |
+|---|---|---|
+| `github/thoroc/odysseus` | `thoroc` | `personal` |
+| `github/thoroc/nx-plugin` | `thoroc` | `personal` |
+| `github/Noovolari/leapp` | `Noovolari` | _(unchanged)_ |
 
 After changing the config, run `vscode-pmu refresh` to retag all managed projects and pick up the new scan depth.
 

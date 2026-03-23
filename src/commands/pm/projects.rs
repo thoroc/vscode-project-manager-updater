@@ -264,7 +264,7 @@ pub fn add(path: Option<&Path>, root: &Path) -> Result<()> {
         .unwrap_or_default();
     let cfg = Config::load()?;
     let skip = trie_skip.max(cfg.floor_for(&host));
-    let tags = compute_tags(&resolved, root, skip);
+    let tags = cfg.rename_tags(compute_tags(&resolved, root, skip));
     let project = Project::new(resolved.clone(), tags);
     eprintln!(
         "[{}] Adding project: {}",

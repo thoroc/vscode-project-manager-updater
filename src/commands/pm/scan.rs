@@ -143,6 +143,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
         let trie_skip = skip_map.get(&project.root_path).copied().unwrap_or(1);
         let skip = effective_skip(&project.root_path, root, trie_skip, &cfg);
         project.retag(root, skip);
+        project.tags = cfg.rename_tags(std::mem::take(&mut project.tags));
     }
 
     let existing_paths: std::collections::HashSet<String> =
@@ -154,7 +155,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
             if pb.exists() {
                 let trie_skip = skip_map.get(path_str).copied().unwrap_or(1);
                 let skip = effective_skip(path_str, root, trie_skip, &cfg);
-                let tags = compute_tags(&pb, root, skip);
+                let tags = cfg.rename_tags(compute_tags(&pb, root, skip));
                 inside.push(Project::new(pb, tags));
             }
         }
