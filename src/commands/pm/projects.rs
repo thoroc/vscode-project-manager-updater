@@ -352,11 +352,11 @@ mod tests {
     fn tags_multiple_segments_when_deep_enough() {
         let root = std::path::Path::new("/home/user/Projects");
         let project = std::path::Path::new(
-            "/home/user/Projects/gitlab/org/ns/cloudengineering/containerimages/dkr-wildfly",
+            "/home/user/Projects/gitlab/org/ns/infra/images/my-app",
         );
         assert_eq!(
             compute_tags(project, root, 3),
-            vec!["cloudengineering", "containerimages"]
+            vec!["infra", "images"]
         );
     }
 
@@ -400,23 +400,23 @@ mod tests {
 
     #[test]
     fn skip_depth_per_branch_not_global() {
-        // plg-tech has only one child (ppl) → plg-tech is a pass-through, skip=2.
-        // ppl has two children (team-a, team-b) → ppl is meaningful, stop at skip=2.
-        // other-org has two children (group-x, group-y) → diverges immediately, skip=1.
+        // acme has only one child (platform) → acme is a pass-through, skip=2.
+        // platform has two children (team-a, team-b) → platform is meaningful, stop at skip=2.
+        // oss has two children (group-x, group-y) → diverges immediately, skip=1.
         let root = std::path::Path::new("/Projects");
         let paths = vec![
-            "/Projects/gitlab/plg-tech/ppl/team-a/repo-a".to_string(),
-            "/Projects/gitlab/plg-tech/ppl/team-b/repo-b".to_string(),
-            "/Projects/gitlab/other-org/group-x/repo-c".to_string(),
-            "/Projects/gitlab/other-org/group-y/repo-d".to_string(),
+            "/Projects/gitlab/acme/platform/team-a/repo-a".to_string(),
+            "/Projects/gitlab/acme/platform/team-b/repo-b".to_string(),
+            "/Projects/gitlab/oss/group-x/repo-c".to_string(),
+            "/Projects/gitlab/oss/group-y/repo-d".to_string(),
         ];
         let map = path_skip_map(&paths, root);
-        // plg-tech skipped (pass-through) → tags start at ppl: [ppl, team-a/b]
-        assert_eq!(map["/Projects/gitlab/plg-tech/ppl/team-a/repo-a"], 2);
-        assert_eq!(map["/Projects/gitlab/plg-tech/ppl/team-b/repo-b"], 2);
-        // other-org diverges immediately → tags start at other-org: [other-org, group-x/y]
-        assert_eq!(map["/Projects/gitlab/other-org/group-x/repo-c"], 1);
-        assert_eq!(map["/Projects/gitlab/other-org/group-y/repo-d"], 1);
+        // acme skipped (pass-through) → tags start at platform: [platform, team-a/b]
+        assert_eq!(map["/Projects/gitlab/acme/platform/team-a/repo-a"], 2);
+        assert_eq!(map["/Projects/gitlab/acme/platform/team-b/repo-b"], 2);
+        // oss diverges immediately → tags start at oss: [oss, group-x/y]
+        assert_eq!(map["/Projects/gitlab/oss/group-x/repo-c"], 1);
+        assert_eq!(map["/Projects/gitlab/oss/group-y/repo-d"], 1);
     }
 
     // ── Project::new ──────────────────────────────────────────────────────────
