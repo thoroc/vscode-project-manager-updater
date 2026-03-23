@@ -23,13 +23,19 @@ The scanner walks `<root>` up to **6 levels deep**. The following directories ar
 
 Tags are derived automatically from each project's path using a two-step algorithm.
 
-**Step 1 — trie-based pass-through detection**
+**Step 1 — trie-based pass-through and singleton detection**
 
-A prefix trie is built across all discovered paths. For each project, the algorithm walks its own branch and skips any segment whose subtree fans out to exactly one distinct next-level segment (i.e. the segment is a pass-through with no branching value). The VCS host (first segment after `<root>`) is always skipped. The remaining intermediate segments — between the skipped prefix and the project directory name — become the tags.
+A prefix trie is built across all discovered paths. For each project, the algorithm walks its own branch and skips a segment when either of these conditions hold:
 
-| Path | Trie result | Tags |
+- **Pass-through**: the segment's subtree fans out to exactly one distinct next-level segment (no branching value at that level).
+- **Singleton leaf-group**: the segment has no sub-levels in the trie and contains only one direct project — a group with a single project adds no filtering value.
+
+The VCS host (first segment after `<root>`) is always skipped. The remaining intermediate segments — between the skipped prefix and the project directory name — become the tags. When all intermediate segments are skipped, the host name is used as a fallback.
+
+| Path | Condition | Tags |
 |---|---|---|
-| `<root>/github/org/repo` | host skipped, `org` diverges | `org` |
+| `<root>/github/org/repo-a` and `.../org/repo-b` | `org` has 2 projects → kept | `org` |
+| `<root>/github/solo-org/only-repo` | `solo-org` has 1 project → singleton, skipped | `github` _(fallback)_ |
 | `<root>/github/repo` | host skipped, no intermediates | `github` _(fallback)_ |
 | `<root>/my-repo` | direct child of root | _(none)_ |
 
