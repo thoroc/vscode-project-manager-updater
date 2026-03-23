@@ -7,8 +7,6 @@ use super::projects::{
     compute_tags, path_skip_map, read_projects, write_projects, Project, projects_json_path,
 };
 
-const MAX_DEPTH: usize = 6;
-
 /// Names of directories to prune (never descend into).
 const PRUNE_DIRS: &[&str] = &[
     "node_modules",
@@ -107,7 +105,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
             "[{}] Cache stale or absent — walking filesystem…",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
         );
-        let paths = discover_git_repos_in(root, MAX_DEPTH);
+        let paths = discover_git_repos_in(root, cfg.scan_max_depth());
         cache::write_paths(root, &paths)?;
         eprintln!(
             "[{}] Found {} git repos.",

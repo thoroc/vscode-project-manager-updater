@@ -11,7 +11,7 @@ A compiled Rust CLI that keeps the [VSCode Project Manager](https://marketplace.
 
 ### Directory scanning
 
-The scanner walks `<root>` up to **6 levels deep**. The following directories are never descended into:
+The scanner walks `<root>` up to **`max_depth` levels deep** (default: 6, configurable in `~/.config/vscode-pmu/config.toml`). The following directories are never descended into:
 
 | Category | Excluded |
 |---|---|
@@ -241,12 +241,15 @@ vscode-pmu config show
 The config file is plain TOML and can be edited directly:
 
 ```toml
+# How many directory levels to scan below <root> (default: 6).
+max_depth = 6
+
 [host_skip]
 gitlab = 3
 github = 1
 ```
 
-After changing the config, run `vscode-pmu refresh` to retag all managed projects.
+After changing the config, run `vscode-pmu refresh` to retag all managed projects and pick up the new scan depth.
 
 | Path | Config | Effective skip | Tags |
 |---|---|---|---|

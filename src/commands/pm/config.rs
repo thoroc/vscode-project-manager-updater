@@ -10,8 +10,15 @@ pub fn config_path() -> PathBuf {
         .join(".config/vscode-pmu/config.toml")
 }
 
+const DEFAULT_MAX_DEPTH: usize = 6;
+
 const DEFAULT_TEMPLATE: &str = r#"# vscode-pmu configuration
 # https://github.com/thoroc/vscode-project-manager-updater
+#
+# max_depth = 6
+# How many directory levels below <root> to scan for git repositories.
+# Increase for deeper monorepo layouts; decrease for faster scans on
+# shallow trees. Default: 6.
 #
 # [host_skip]
 # Set a minimum number of path segments to skip per VCS host when deriving
@@ -37,11 +44,19 @@ const DEFAULT_TEMPLATE: &str = r#"# vscode-pmu configuration
 ///   `max(trie_derived_skip, host_skip.get(host).copied().unwrap_or(0))`
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct Config {
+    /// How many directory levels below `<root>` to scan.  `None` → use `DEFAULT_MAX_DEPTH`.
+    #[serde(default)]
+    pub max_depth: Option<usize>,
     #[serde(default)]
     pub host_skip: HashMap<String, usize>,
 }
 
 impl Config {
+    /// Returns the configured scan depth, falling back to [`DEFAULT_MAX_DEPTH`].
+    pub fn scan_max_depth(&self) -> usize {
+        self.max_depth.unwrap_or(DEFAULT_MAX_DEPTH)
+    }
+
     pub fn load() -> Result<Self> {
         let path = config_path();
         if !path.exists() {
@@ -118,6 +133,32 @@ pub fn run_show() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scan_max_depth_returns_default_when_unset() {
+        let cfg = Config::default();
+        assert_eq!(cfg.scan_max_depth(), DEFAULT_MAX_DEPTH);
+    }
+
+    #[test]
+    fn scan_max_depth_returns_configured_value() {
+        let cfg = Config { max_depth: Some(3), ..Default::default() };
+        assert_eq!(cfg.scan_max_depth(), 3);
+    }
+
+    #[test]
+    fn default_template_yields_default_max_depth() {
+        let cfg: Config = toml::from_str(DEFAULT_TEMPLATE).expect("template is not valid TOML");
+        assert_eq!(cfg.scan_max_depth(), DEFAULT_MAX_DEPTH);
+    }
+
+    #[test]
+    fn max_depth_round_trips_toml() {
+        let cfg = Config { max_depth: Some(4), ..Default::default() };
+        let s = toml::to_string_pretty(&cfg).unwrap();
+        let loaded: Config = toml::from_str(&s).unwrap();
+        assert_eq!(loaded.scan_max_depth(), 4);
+    }
 
     #[test]
     fn floor_for_returns_zero_when_host_absent() {
