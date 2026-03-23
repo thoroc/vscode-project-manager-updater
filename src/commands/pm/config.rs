@@ -10,6 +10,29 @@ pub fn config_path() -> PathBuf {
         .join(".config/vscode-pmu/config.toml")
 }
 
+const DEFAULT_TEMPLATE: &str = r#"# vscode-pmu configuration
+# https://github.com/thoroc/vscode-project-manager-updater
+#
+# [host_skip]
+# Set a minimum number of path segments to skip per VCS host when deriving
+# project tags. The first segment (the host directory itself) is always
+# skipped automatically; this setting raises that floor further.
+#
+# The effective skip for any path is:
+#   max(trie_derived_skip, host_skip value)
+#
+# Use this when an organisational namespace sits between the host and your
+# team directories and you do not want it to appear as a tag.
+#
+# Example: for a layout like
+#   ~/Projects/gitlab/company/platform/team/project
+# set gitlab = 3 to skip company and platform, keeping only team as the tag.
+#
+# [host_skip]
+# gitlab = 1
+# github = 1
+"#;
+
 /// Per-host minimum skip depths.  The effective skip for a path is:
 ///   `max(trie_derived_skip, host_skip.get(host).copied().unwrap_or(0))`
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -22,6 +45,19 @@ impl Config {
     pub fn load() -> Result<Self> {
         let path = config_path();
         if !path.exists() {
+            // Create the file with the commented template so users can
+            // discover the available options without reading the docs.
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("cannot create {}", parent.display()))?;
+            }
+            fs::write(&path, DEFAULT_TEMPLATE)
+                .with_context(|| format!("cannot write {}", path.display()))?;
+            eprintln!(
+                "[{}] Created default config at {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                path.display()
+            );
             return Ok(Self::default());
         }
         let content = fs::read_to_string(&path)
@@ -94,6 +130,13 @@ mod tests {
         let mut cfg = Config::default();
         cfg.host_skip.insert("gitlab".to_string(), 3);
         assert_eq!(cfg.floor_for("gitlab"), 3);
+    }
+
+    #[test]
+    fn default_template_is_valid_toml() {
+        // The template must parse without errors (all active lines are comments).
+        let cfg: Config = toml::from_str(DEFAULT_TEMPLATE).expect("template is not valid TOML");
+        assert!(cfg.host_skip.is_empty(), "template should produce empty config");
     }
 
     #[test]
