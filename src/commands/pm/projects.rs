@@ -107,6 +107,12 @@ pub fn path_skip_map(
     // a trie key so it cannot accidentally be treated as a pass-through node.
     let mut trie: HashMap<Vec<String>, HashSet<String>> = HashMap::new();
 
+    // leaf_count: group prefix → number of projects that are DIRECT children
+    // of that group (i.e. the project name is the very next segment).
+    // Used to distinguish singleton leaf-groups (skip → host fallback) from
+    // multi-project leaf-groups (keep group name as a meaningful tag).
+    let mut leaf_count: HashMap<Vec<String>, usize> = HashMap::new();
+
     let segs_list: Vec<(String, Vec<String>)> = paths
         .iter()
         .filter_map(|p| {
@@ -129,38 +135,55 @@ pub fn path_skip_map(
                 .or_default()
                 .insert(segs[i].clone());
         }
+        // The parent of the project name is segs[..segs.len()-1].
+        if segs.len() >= 2 {
+            *leaf_count
+                .entry(segs[..segs.len() - 1].to_vec())
+                .or_insert(0) += 1;
+        }
     }
 
     segs_list
         .into_iter()
-        .map(|(path, segs)| (path, trie_skip_depth(&segs, &trie)))
+        .map(|(path, segs)| (path, trie_skip_depth(&segs, &trie, &leaf_count)))
         .collect()
 }
 
 /// Walks `segs` through `trie`, following the path's own branch.
-/// Skips a segment when its subtree has exactly one distinct child
-/// (pass-through node). The host (index 0) is always skipped.
+///
+/// A segment is skipped when:
+/// - Its subtree has exactly one distinct child (structural pass-through), OR
+/// - It is a leaf-group (no sub-levels in the trie) containing only one
+///   direct project — a singleton group adds no filtering value.
+///
+/// The host (index 0) is always skipped.
 fn trie_skip_depth(
     segs: &[String],
-    trie: &std::collections::HashMap<
-        Vec<String>,
-        std::collections::HashSet<String>,
-    >,
+    trie: &std::collections::HashMap<Vec<String>, std::collections::HashSet<String>>,
+    leaf_count: &std::collections::HashMap<Vec<String>, usize>,
 ) -> usize {
     if segs.len() < 2 {
         return 0; // direct child of watch_root — no host to skip
     }
     let mut skip = 1; // always skip the VCS host
     for i in 1..segs.len().saturating_sub(1) {
-        // segs[..=i] is the prefix that ends at segs[i] (inclusive).
-        // trie[segs[..=i]] gives the children OF segs[i] within this subtree.
+        // segs[..=i] is the prefix ending at segs[i] (inclusive).
+        // trie[segs[..=i]] gives the sub-level children of segs[i].
         match trie.get(&segs[..=i]) {
             Some(children) if children.len() == 1 => {
-                // Only one path forward from segs[i] → it is a pass-through,
-                // not a meaningful grouping label.
+                // Only one sub-level forward → structural pass-through.
                 skip = i + 1;
             }
-            _ => break, // multiple children or leaf → meaningful level, stop
+            None => {
+                // segs[i] is a leaf-group: projects are its direct children.
+                // Only worth tagging if it contains more than one project.
+                let n = leaf_count.get(&segs[..=i]).copied().unwrap_or(0);
+                if n <= 1 {
+                    skip = i + 1; // singleton → fall back to host
+                }
+                break;
+            }
+            _ => break, // multiple sub-groups → meaningful level, stop
         }
     }
     skip
@@ -386,16 +409,30 @@ mod tests {
     }
 
     #[test]
-    fn skip_depth_1_when_host_children_diverge_immediately() {
+    fn skip_depth_2_for_singleton_leaf_groups() {
+        // Each group has only one project → singleton, not useful for filtering.
+        // Both get skip=2 so compute_tags falls back to the host name.
         let root = std::path::Path::new("/Projects");
         let paths = vec![
             "/Projects/github/group-a/repo-a".to_string(),
             "/Projects/github/group-b/repo-b".to_string(),
         ];
         let map = path_skip_map(&paths, root);
-        // github has 2 children (group-a, group-b) → diverges at depth 1 → skip=1
+        assert_eq!(map["/Projects/github/group-a/repo-a"], 2);
+        assert_eq!(map["/Projects/github/group-b/repo-b"], 2);
+    }
+
+    #[test]
+    fn skip_depth_1_when_group_has_multiple_projects() {
+        // group-a has two projects → meaningful for filtering → skip=1.
+        let root = std::path::Path::new("/Projects");
+        let paths = vec![
+            "/Projects/github/group-a/repo-a".to_string(),
+            "/Projects/github/group-a/repo-b".to_string(),
+        ];
+        let map = path_skip_map(&paths, root);
         assert_eq!(map["/Projects/github/group-a/repo-a"], 1);
-        assert_eq!(map["/Projects/github/group-b/repo-b"], 1);
+        assert_eq!(map["/Projects/github/group-a/repo-b"], 1);
     }
 
     #[test]
