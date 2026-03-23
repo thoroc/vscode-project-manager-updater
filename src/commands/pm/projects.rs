@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::cache;
+use super::config::Config;
 
 pub fn projects_json_path() -> PathBuf {
     dirs::home_dir()
@@ -32,38 +33,137 @@ fn default_true() -> bool {
 }
 
 impl Project {
-    pub fn new(root_path: PathBuf, watch_root: &Path) -> Self {
+    pub fn new(root_path: PathBuf, tags: Vec<String>) -> Self {
         let name = root_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let tag = compute_tag(&root_path, watch_root);
         Project {
             name,
             root_path: root_path.to_string_lossy().to_string(),
             paths: vec![],
-            tags: if tag.is_empty() { vec![] } else { vec![tag] },
+            tags,
             enabled: true,
             profile: String::new(),
         }
     }
+
+    /// Recomputes tags in-place using the provided skip depth.
+    pub fn retag(&mut self, watch_root: &Path, skip: usize) {
+        self.tags = compute_tags(Path::new(&self.root_path), watch_root, skip);
+    }
 }
 
-pub fn compute_tag(root_path: &Path, watch_root: &Path) -> String {
-    if let Ok(rel) = root_path.strip_prefix(watch_root) {
-        let mut comps = rel.components();
-        let first = comps.next();
-        let second = comps.next();
-        if second.is_some() {
-            // project is nested — first segment is the tag
-            if let Some(c) = first {
-                return c.as_os_str().to_string_lossy().to_string();
-            }
-        }
-        // direct child of watch_root
-        return String::new();
+/// Returns meaningful tags for `root_path` under `watch_root`.
+///
+/// `skip` is the number of leading path components (relative to `watch_root`)
+/// treated as organisational noise. The intermediate components between the
+/// skipped prefix and the project directory name become the tags.
+///
+/// Falls back to the VCS-host name when the prefix consumes all intermediate
+/// components; returns an empty vec for direct children of `watch_root`.
+pub fn compute_tags(root_path: &Path, watch_root: &Path, skip: usize) -> Vec<String> {
+    let Ok(rel) = root_path.strip_prefix(watch_root) else {
+        return vec![];
+    };
+    let comps: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if comps.is_empty() {
+        return vec![];
     }
-    String::new()
+    let start = skip.min(comps.len().saturating_sub(1));
+    let end = comps.len().saturating_sub(1); // exclude project name
+    if start < end {
+        comps[start..end].to_vec()
+    } else if comps.len() >= 2 {
+        // No intermediate segments after skip — fall back to the host name.
+        vec![comps[0].clone()]
+    } else {
+        // Direct child of watch_root — no meaningful tag.
+        vec![]
+    }
+}
+
+/// For each path in `paths`, returns the skip depth — the number of leading
+/// components (relative to `watch_root`) to treat as organisational noise.
+///
+/// The algorithm builds a prefix trie across all paths and then walks each
+/// path's own branch: a segment is "noise" if its subtree fans out to exactly
+/// one distinct next-level segment (i.e. it is a pass-through node).
+/// The VCS host (first component after `watch_root`) is always skipped.
+///
+/// This allows deeply nested organisational hierarchies to be stripped
+/// automatically without any hardcoded path values.
+pub fn path_skip_map(
+    paths: &[String],
+    watch_root: &Path,
+) -> std::collections::HashMap<String, usize> {
+    use std::collections::{HashMap, HashSet};
+
+    // Build trie: prefix → set of distinct values at the very next level.
+    // The final segment of each path (the project directory) is never added as
+    // a trie key so it cannot accidentally be treated as a pass-through node.
+    let mut trie: HashMap<Vec<String>, HashSet<String>> = HashMap::new();
+
+    let segs_list: Vec<(String, Vec<String>)> = paths
+        .iter()
+        .filter_map(|p| {
+            Path::new(p)
+                .strip_prefix(watch_root)
+                .ok()
+                .map(|rel| {
+                    let segs: Vec<String> = rel
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                        .collect();
+                    (p.clone(), segs)
+                })
+        })
+        .collect();
+
+    for (_, segs) in &segs_list {
+        for i in 0..segs.len().saturating_sub(1) {
+            trie.entry(segs[..i].to_vec())
+                .or_default()
+                .insert(segs[i].clone());
+        }
+    }
+
+    segs_list
+        .into_iter()
+        .map(|(path, segs)| (path, trie_skip_depth(&segs, &trie)))
+        .collect()
+}
+
+/// Walks `segs` through `trie`, following the path's own branch.
+/// Skips a segment when its subtree has exactly one distinct child
+/// (pass-through node). The host (index 0) is always skipped.
+fn trie_skip_depth(
+    segs: &[String],
+    trie: &std::collections::HashMap<
+        Vec<String>,
+        std::collections::HashSet<String>,
+    >,
+) -> usize {
+    if segs.len() < 2 {
+        return 0; // direct child of watch_root — no host to skip
+    }
+    let mut skip = 1; // always skip the VCS host
+    for i in 1..segs.len().saturating_sub(1) {
+        // segs[..=i] is the prefix that ends at segs[i] (inclusive).
+        // trie[segs[..=i]] gives the children OF segs[i] within this subtree.
+        match trie.get(&segs[..=i]) {
+            Some(children) if children.len() == 1 => {
+                // Only one path forward from segs[i] → it is a pass-through,
+                // not a meaningful grouping label.
+                skip = i + 1;
+            }
+            _ => break, // multiple children or leaf → meaningful level, stop
+        }
+    }
+    skip
 }
 
 pub fn read_projects(path: &Path) -> Result<Vec<Project>> {
@@ -122,7 +222,27 @@ pub fn add(path: Option<&Path>, root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let project = Project::new(resolved.clone(), root);
+    // Derive skip depth using the trie-based algorithm over all managed paths
+    // plus the new one.
+    let new_path_str = resolved.to_string_lossy().into_owned();
+    let mut candidate_paths: Vec<String> = projects
+        .iter()
+        .filter(|p| Path::new(&p.root_path).starts_with(root))
+        .map(|p| p.root_path.clone())
+        .collect();
+    candidate_paths.push(new_path_str.clone());
+    let skip_map = path_skip_map(&candidate_paths, root);
+    let trie_skip = skip_map.get(&new_path_str).copied().unwrap_or(1);
+    let host = resolved
+        .strip_prefix(root)
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let cfg = Config::load()?;
+    let skip = trie_skip.max(cfg.floor_for(&host));
+    let tags = compute_tags(&resolved, root, skip);
+    let project = Project::new(resolved.clone(), tags);
     eprintln!(
         "[{}] Adding project: {}",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -196,34 +316,107 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    // ── compute_tag ───────────────────────────────────────────────────────────
+    // ── compute_tags ──────────────────────────────────────────────────────────
 
     #[test]
-    fn tag_is_empty_for_direct_child() {
+    fn tags_empty_for_direct_child() {
         let root = std::path::Path::new("/home/user/Projects");
         let project = std::path::Path::new("/home/user/Projects/my-repo");
-        assert_eq!(compute_tag(project, root), "");
+        assert_eq!(compute_tags(project, root, 1), Vec::<String>::new());
     }
 
     #[test]
-    fn tag_is_first_segment_for_nested_child() {
+    fn tags_fallback_to_host_for_shallow_nested() {
         let root = std::path::Path::new("/home/user/Projects");
         let project = std::path::Path::new("/home/user/Projects/github/my-repo");
-        assert_eq!(compute_tag(project, root), "github");
+        assert_eq!(compute_tags(project, root, 1), vec!["github"]);
     }
 
     #[test]
-    fn tag_is_first_segment_for_deeply_nested() {
-        let root = std::path::Path::new("/home/user/Projects");
-        let project = std::path::Path::new("/home/user/Projects/gitlab/org/group/my-repo");
-        assert_eq!(compute_tag(project, root), "gitlab");
-    }
-
-    #[test]
-    fn tag_is_empty_for_path_outside_watch_root() {
+    fn tags_empty_for_path_outside_watch_root() {
         let root = std::path::Path::new("/home/user/Projects");
         let project = std::path::Path::new("/home/user/other/my-repo");
-        assert_eq!(compute_tag(project, root), "");
+        assert_eq!(compute_tags(project, root, 1), Vec::<String>::new());
+    }
+
+    #[test]
+    fn tags_intermediate_segments_after_skip() {
+        let root = std::path::Path::new("/home/user/Projects");
+        let project =
+            std::path::Path::new("/home/user/Projects/gitlab/org/ns/group/my-repo");
+        // skip=3 means gitlab/org/ns are noise → tag is group
+        assert_eq!(compute_tags(project, root, 3), vec!["group"]);
+    }
+
+    #[test]
+    fn tags_multiple_segments_when_deep_enough() {
+        let root = std::path::Path::new("/home/user/Projects");
+        let project = std::path::Path::new(
+            "/home/user/Projects/gitlab/org/ns/cloudengineering/containerimages/dkr-wildfly",
+        );
+        assert_eq!(
+            compute_tags(project, root, 3),
+            vec!["cloudengineering", "containerimages"]
+        );
+    }
+
+    // ── path_skip_map / trie_skip_depth ──────────────────────────────────────
+
+    #[test]
+    fn skip_depth_1_for_single_project_under_host() {
+        let root = std::path::Path::new("/Projects");
+        let paths = vec!["/Projects/github/my-repo".to_string()];
+        let map = path_skip_map(&paths, root);
+        assert_eq!(map["/Projects/github/my-repo"], 1);
+    }
+
+    #[test]
+    fn skip_depth_strips_passthrough_org_segments() {
+        // org leads to only one child (ns) → org is a pass-through, skip=2.
+        // ns leads to two children (group-a, group-b) → ns is meaningful, stop.
+        // Result: tags start at ns (skip=2), so tags include "ns" and the group.
+        let root = std::path::Path::new("/Projects");
+        let paths = vec![
+            "/Projects/gitlab/org/ns/group-a/repo-a".to_string(),
+            "/Projects/gitlab/org/ns/group-b/repo-b".to_string(),
+        ];
+        let map = path_skip_map(&paths, root);
+        assert_eq!(map["/Projects/gitlab/org/ns/group-a/repo-a"], 2);
+        assert_eq!(map["/Projects/gitlab/org/ns/group-b/repo-b"], 2);
+    }
+
+    #[test]
+    fn skip_depth_1_when_host_children_diverge_immediately() {
+        let root = std::path::Path::new("/Projects");
+        let paths = vec![
+            "/Projects/github/group-a/repo-a".to_string(),
+            "/Projects/github/group-b/repo-b".to_string(),
+        ];
+        let map = path_skip_map(&paths, root);
+        // github has 2 children (group-a, group-b) → diverges at depth 1 → skip=1
+        assert_eq!(map["/Projects/github/group-a/repo-a"], 1);
+        assert_eq!(map["/Projects/github/group-b/repo-b"], 1);
+    }
+
+    #[test]
+    fn skip_depth_per_branch_not_global() {
+        // plg-tech has only one child (ppl) → plg-tech is a pass-through, skip=2.
+        // ppl has two children (team-a, team-b) → ppl is meaningful, stop at skip=2.
+        // other-org has two children (group-x, group-y) → diverges immediately, skip=1.
+        let root = std::path::Path::new("/Projects");
+        let paths = vec![
+            "/Projects/gitlab/plg-tech/ppl/team-a/repo-a".to_string(),
+            "/Projects/gitlab/plg-tech/ppl/team-b/repo-b".to_string(),
+            "/Projects/gitlab/other-org/group-x/repo-c".to_string(),
+            "/Projects/gitlab/other-org/group-y/repo-d".to_string(),
+        ];
+        let map = path_skip_map(&paths, root);
+        // plg-tech skipped (pass-through) → tags start at ppl: [ppl, team-a/b]
+        assert_eq!(map["/Projects/gitlab/plg-tech/ppl/team-a/repo-a"], 2);
+        assert_eq!(map["/Projects/gitlab/plg-tech/ppl/team-b/repo-b"], 2);
+        // other-org diverges immediately → tags start at other-org: [other-org, group-x/y]
+        assert_eq!(map["/Projects/gitlab/other-org/group-x/repo-c"], 1);
+        assert_eq!(map["/Projects/gitlab/other-org/group-y/repo-d"], 1);
     }
 
     // ── Project::new ──────────────────────────────────────────────────────────
@@ -233,7 +426,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().join("my-project");
         fs::create_dir_all(&repo).unwrap();
-        let p = Project::new(repo, tmp.path());
+        let p = Project::new(repo, vec![]);
         assert_eq!(p.name, "my-project");
     }
 
@@ -242,7 +435,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().join("repo");
         fs::create_dir_all(&repo).unwrap();
-        let p = Project::new(repo, tmp.path());
+        let p = Project::new(repo, vec![]);
         assert!(p.enabled);
     }
 
@@ -251,7 +444,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().join("repo");
         fs::create_dir_all(&repo).unwrap();
-        let p = Project::new(repo, tmp.path());
+        let p = Project::new(repo, vec![]);
         assert!(p.paths.is_empty());
         assert_eq!(p.profile, "");
     }

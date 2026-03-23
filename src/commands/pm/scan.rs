@@ -2,7 +2,10 @@ use anyhow::Result;
 use walkdir::WalkDir;
 
 use super::cache;
-use super::projects::{Project, read_projects, write_projects, projects_json_path};
+use super::config::Config;
+use super::projects::{
+    compute_tags, path_skip_map, read_projects, write_projects, Project, projects_json_path,
+};
 
 const MAX_DEPTH: usize = 6;
 
@@ -66,8 +69,26 @@ pub(crate) fn discover_git_repos_in(root: &std::path::Path, max_depth: usize) ->
     found
 }
 
+/// Returns the effective skip depth for `abs_path`, taking the maximum of the
+/// trie-derived value and the per-host floor from `cfg`.
+fn effective_skip(
+    abs_path: &str,
+    root: &std::path::Path,
+    trie_skip: usize,
+    cfg: &Config,
+) -> usize {
+    let host = std::path::Path::new(abs_path)
+        .strip_prefix(root)
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .unwrap_or_default();
+    trie_skip.max(cfg.floor_for(&host))
+}
+
 pub fn run_scan(root: &std::path::Path) -> Result<()> {
     let projects_path = projects_json_path();
+    let cfg = Config::load()?;
 
     eprintln!(
         "[{}] Starting scan of {}…",
@@ -107,6 +128,25 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
 
     inside.retain(|p| std::path::Path::new(&p.root_path).exists());
 
+    // Pool existing + discovered paths to compute per-host skip depths.
+    let all_paths: Vec<String> = {
+        let mut v: Vec<String> = inside.iter().map(|p| p.root_path.clone()).collect();
+        for p in &discovered {
+            if !v.contains(p) {
+                v.push(p.clone());
+            }
+        }
+        v
+    };
+    let skip_map = path_skip_map(&all_paths, root);
+
+    // Retag existing inside projects with the refined algorithm.
+    for project in &mut inside {
+        let trie_skip = skip_map.get(&project.root_path).copied().unwrap_or(1);
+        let skip = effective_skip(&project.root_path, root, trie_skip, &cfg);
+        project.retag(root, skip);
+    }
+
     let existing_paths: std::collections::HashSet<String> =
         inside.iter().map(|p| p.root_path.clone()).collect();
 
@@ -114,7 +154,10 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
         if !existing_paths.contains(path_str) {
             let pb = std::path::PathBuf::from(path_str);
             if pb.exists() {
-                inside.push(Project::new(pb, root));
+                let trie_skip = skip_map.get(path_str).copied().unwrap_or(1);
+                let skip = effective_skip(path_str, root, trie_skip, &cfg);
+                let tags = compute_tags(&pb, root, skip);
+                inside.push(Project::new(pb, tags));
             }
         }
     }

@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod config;
 pub mod hook;
 pub mod launchd;
 pub mod projects;
@@ -58,6 +59,11 @@ pub enum Subcommands {
         #[command(subcommand)]
         action: HooksAction,
     },
+    /// Manage per-host tag skip depth configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
     /// Watch <root> for filesystem changes (used internally by the daemon)
     #[command(hide = true)]
     Watch,
@@ -79,6 +85,19 @@ pub enum HooksAction {
     Remove,
 }
 
+#[derive(Subcommand)]
+pub enum ConfigAction {
+    /// Set the minimum tag-skip depth for a VCS host
+    SetSkip {
+        /// VCS host directory name (e.g. gitlab, github)
+        host: String,
+        /// Number of path segments to skip when deriving tags
+        depth: usize,
+    },
+    /// Print the current configuration
+    Show,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let root = cli.root.unwrap_or_else(default_root);
     match cli.subcommand {
@@ -96,6 +115,10 @@ pub fn run(cli: Cli) -> Result<()> {
         Subcommands::Hooks { action } => match action {
             HooksAction::Install => hook::install(),
             HooksAction::Remove => hook::remove(),
+        },
+        Subcommands::Config { action } => match action {
+            ConfigAction::SetSkip { host, depth } => config::run_set_skip(&host, depth),
+            ConfigAction::Show => config::run_show(),
         },
         Subcommands::Watch => watch::run_watch(&root),
     }
