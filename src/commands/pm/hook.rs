@@ -53,8 +53,7 @@ pub(crate) fn write_hook_at(path: &Path) -> Result<()> {
 
 pub(crate) fn remove_hook_at(path: &Path) -> Result<bool> {
     if path.exists() {
-        fs::remove_file(path)
-            .with_context(|| format!("cannot remove hook {}", path.display()))?;
+        fs::remove_file(path).with_context(|| format!("cannot remove hook {}", path.display()))?;
         return Ok(true);
     }
     Ok(false)

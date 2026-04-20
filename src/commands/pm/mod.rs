@@ -11,9 +11,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 fn default_root() -> PathBuf {
-    dirs::home_dir()
-        .expect("no home dir")
-        .join("Projects")
+    dirs::home_dir().expect("no home dir").join("Projects")
 }
 
 #[derive(Parser)]

@@ -4,7 +4,7 @@ use walkdir::WalkDir;
 use super::cache;
 use super::config::Config;
 use super::projects::{
-    compute_tags, path_skip_map, read_projects, write_projects, Project, projects_json_path,
+    compute_tags, path_skip_map, projects_json_path, read_projects, write_projects, Project,
 };
 
 /// Names of directories to prune (never descend into).
@@ -69,12 +69,7 @@ pub(crate) fn discover_git_repos_in(root: &std::path::Path, max_depth: usize) ->
 
 /// Returns the effective skip depth for `abs_path`, taking the maximum of the
 /// trie-derived value and the per-host floor from `cfg`.
-fn effective_skip(
-    abs_path: &str,
-    root: &std::path::Path,
-    trie_skip: usize,
-    cfg: &Config,
-) -> usize {
+fn effective_skip(abs_path: &str, root: &std::path::Path, trie_skip: usize, cfg: &Config) -> usize {
     let host = std::path::Path::new(abs_path)
         .strip_prefix(root)
         .ok()
@@ -119,10 +114,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
 
     let (mut inside, outside): (Vec<Project>, Vec<Project>) = existing
         .into_iter()
-        .partition(|p| {
-            std::path::Path::new(&p.root_path)
-                .starts_with(root)
-        });
+        .partition(|p| std::path::Path::new(&p.root_path).starts_with(root));
 
     inside.retain(|p| std::path::Path::new(&p.root_path).exists());
 
@@ -209,8 +201,15 @@ mod tests {
     #[test]
     fn prune_dirs_are_excluded() {
         for name in &[
-            "node_modules", "vendor", "build", "dist", "out",
-            "debug", "release", "target", "coverage",
+            "node_modules",
+            "vendor",
+            "build",
+            "dist",
+            "out",
+            "debug",
+            "release",
+            "target",
+            "coverage",
         ] {
             assert!(!should_visit_dir(name, 1), "{name} should be pruned");
         }
@@ -264,7 +263,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         make_git_repo(tmp.path(), "node_modules/some-dep");
         let found = discover_git_repos_in(tmp.path(), 6);
-        assert!(found.is_empty(), "repos inside node_modules must be skipped");
+        assert!(
+            found.is_empty(),
+            "repos inside node_modules must be skipped"
+        );
     }
 
     #[test]
@@ -274,7 +276,10 @@ mod tests {
             make_git_repo(tmp.path(), &format!("{dir}/nested"));
         }
         let found = discover_git_repos_in(tmp.path(), 6);
-        assert!(found.is_empty(), "repos inside artifact dirs must be skipped");
+        assert!(
+            found.is_empty(),
+            "repos inside artifact dirs must be skipped"
+        );
     }
 
     #[test]
@@ -289,7 +294,7 @@ mod tests {
     #[test]
     fn depth_limit_includes_repos_within_range() {
         let tmp = TempDir::new().unwrap();
-        make_git_repo(tmp.path(), "a/b/repo");    // depth 3 from root → .git at depth 4
+        make_git_repo(tmp.path(), "a/b/repo"); // depth 3 from root → .git at depth 4
         let found = discover_git_repos_in(tmp.path(), 3); // max_depth + 1 = 4, reaches .git
         assert_eq!(found.len(), 1);
     }

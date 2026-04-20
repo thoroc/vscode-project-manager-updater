@@ -77,9 +77,14 @@ impl Config {
     /// reverse lookup (`raw_seg → display_label`) at call time.
     pub fn rename_tags(&self, tags: Vec<String>) -> Vec<String> {
         // Build reverse map: raw segment → display label
-        let reverse: HashMap<&str, &str> = self.tag_rename
+        let reverse: HashMap<&str, &str> = self
+            .tag_rename
             .iter()
-            .flat_map(|(label, sources)| sources.iter().map(move |src| (src.as_str(), label.as_str())))
+            .flat_map(|(label, sources)| {
+                sources
+                    .iter()
+                    .map(move |src| (src.as_str(), label.as_str()))
+            })
             .collect();
         tags.into_iter()
             .map(|t| reverse.get(t.as_str()).map(|&s| s.to_owned()).unwrap_or(t))
@@ -104,10 +109,9 @@ impl Config {
             );
             return Ok(Self::default());
         }
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("cannot read {}", path.display()))?;
-        toml::from_str(&content)
-            .with_context(|| format!("invalid TOML in {}", path.display()))
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
+        toml::from_str(&content).with_context(|| format!("invalid TOML in {}", path.display()))
     }
 
     pub fn save(&self) -> Result<()> {
@@ -117,8 +121,7 @@ impl Config {
                 .with_context(|| format!("cannot create {}", parent.display()))?;
         }
         let content = toml::to_string_pretty(self).context("TOML serialisation failed")?;
-        fs::write(&path, content)
-            .with_context(|| format!("cannot write {}", path.display()))
+        fs::write(&path, content).with_context(|| format!("cannot write {}", path.display()))
     }
 
     /// Returns the configured minimum skip depth for `host`, or 0 if not set.
@@ -184,7 +187,10 @@ mod tests {
 
     #[test]
     fn scan_max_depth_returns_configured_value() {
-        let cfg = Config { max_depth: Some(3), ..Default::default() };
+        let cfg = Config {
+            max_depth: Some(3),
+            ..Default::default()
+        };
         assert_eq!(cfg.scan_max_depth(), 3);
     }
 
@@ -196,7 +202,10 @@ mod tests {
 
     #[test]
     fn max_depth_round_trips_toml() {
-        let cfg = Config { max_depth: Some(4), ..Default::default() };
+        let cfg = Config {
+            max_depth: Some(4),
+            ..Default::default()
+        };
         let s = toml::to_string_pretty(&cfg).unwrap();
         let loaded: Config = toml::from_str(&s).unwrap();
         assert_eq!(loaded.scan_max_depth(), 4);
@@ -212,7 +221,8 @@ mod tests {
     #[test]
     fn rename_tags_substitutes_matching_entry() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string()]);
+        cfg.tag_rename
+            .insert("personal".to_string(), vec!["user1".to_string()]);
         let result = cfg.rename_tags(vec!["user1".to_string()]);
         assert_eq!(result, vec!["personal".to_string()]);
     }
@@ -220,7 +230,10 @@ mod tests {
     #[test]
     fn rename_tags_multiple_sources_map_to_one_label() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string(), "user2".to_string()]);
+        cfg.tag_rename.insert(
+            "personal".to_string(),
+            vec!["user1".to_string(), "user2".to_string()],
+        );
         let result = cfg.rename_tags(vec!["user1".to_string(), "user2".to_string()]);
         assert_eq!(result, vec!["personal".to_string(), "personal".to_string()]);
     }
@@ -228,7 +241,8 @@ mod tests {
     #[test]
     fn rename_tags_leaves_unmatched_tags_unchanged() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string()]);
+        cfg.tag_rename
+            .insert("personal".to_string(), vec!["user1".to_string()]);
         let result = cfg.rename_tags(vec!["user1".to_string(), "acme".to_string()]);
         assert_eq!(result, vec!["personal".to_string(), "acme".to_string()]);
     }
@@ -236,11 +250,20 @@ mod tests {
     #[test]
     fn tag_rename_round_trips_toml() {
         let mut cfg = Config::default();
-        cfg.tag_rename.insert("personal".to_string(), vec!["user1".to_string(), "user2".to_string()]);
+        cfg.tag_rename.insert(
+            "personal".to_string(),
+            vec!["user1".to_string(), "user2".to_string()],
+        );
         let s = toml::to_string_pretty(&cfg).unwrap();
         let loaded: Config = toml::from_str(&s).unwrap();
-        assert_eq!(loaded.rename_tags(vec!["user1".to_string()]), vec!["personal".to_string()]);
-        assert_eq!(loaded.rename_tags(vec!["user2".to_string()]), vec!["personal".to_string()]);
+        assert_eq!(
+            loaded.rename_tags(vec!["user1".to_string()]),
+            vec!["personal".to_string()]
+        );
+        assert_eq!(
+            loaded.rename_tags(vec!["user2".to_string()]),
+            vec!["personal".to_string()]
+        );
     }
 
     #[test]
@@ -266,7 +289,10 @@ mod tests {
     fn default_template_is_valid_toml() {
         // The template must parse without errors (all active lines are comments).
         let cfg: Config = toml::from_str(DEFAULT_TEMPLATE).expect("template is not valid TOML");
-        assert!(cfg.host_skip.is_empty(), "template should produce empty config");
+        assert!(
+            cfg.host_skip.is_empty(),
+            "template should produce empty config"
+        );
     }
 
     #[test]

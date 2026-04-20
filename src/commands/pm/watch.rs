@@ -20,8 +20,8 @@ pub fn run_watch(root: &std::path::Path) -> Result<()> {
 
     let (tx, rx) = mpsc::channel::<DebounceEventResult>();
 
-    let mut debouncer = new_debouncer(Duration::from_secs(2), tx)
-        .context("failed to create file watcher")?;
+    let mut debouncer =
+        new_debouncer(Duration::from_secs(2), tx).context("failed to create file watcher")?;
 
     debouncer
         .watcher()

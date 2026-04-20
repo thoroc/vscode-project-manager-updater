@@ -116,16 +116,13 @@ pub fn path_skip_map(
     let segs_list: Vec<(String, Vec<String>)> = paths
         .iter()
         .filter_map(|p| {
-            Path::new(p)
-                .strip_prefix(watch_root)
-                .ok()
-                .map(|rel| {
-                    let segs: Vec<String> = rel
-                        .components()
-                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                        .collect();
-                    (p.clone(), segs)
-                })
+            Path::new(p).strip_prefix(watch_root).ok().map(|rel| {
+                let segs: Vec<String> = rel
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect();
+                (p.clone(), segs)
+            })
         })
         .collect();
 
@@ -201,8 +198,8 @@ pub fn read_projects(path: &Path) -> Result<Vec<Project>> {
     if !path.exists() {
         return Ok(vec![]);
     }
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("cannot read {}", path.display()))?;
+    let content =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
     serde_json::from_str(&content).with_context(|| format!("invalid JSON in {}", path.display()))
 }
 
@@ -210,16 +207,14 @@ pub fn write_projects(path: &Path, projects: &[Project]) -> Result<()> {
     // Backup first
     if path.exists() {
         let bak = path.with_extension("json.bak");
-        fs::copy(path, &bak)
-            .with_context(|| format!("cannot back up {}", path.display()))?;
+        fs::copy(path, &bak).with_context(|| format!("cannot back up {}", path.display()))?;
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
     let json = serde_json::to_string_pretty(projects).context("JSON serialisation failed")?;
-    fs::write(path, json)
-        .with_context(|| format!("cannot write {}", path.display()))?;
+    fs::write(path, json).with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
 }
 
@@ -316,9 +311,7 @@ pub fn remove(name: Option<&str>, root: &Path) -> Result<()> {
     };
 
     let before = projects.len();
-    projects.retain(|p| {
-        !(Path::new(&p.root_path).starts_with(root) && p.name == target)
-    });
+    projects.retain(|p| !(Path::new(&p.root_path).starts_with(root) && p.name == target));
 
     if projects.len() == before {
         eprintln!(
@@ -373,8 +366,7 @@ mod tests {
     #[test]
     fn tags_intermediate_segments_after_skip() {
         let root = std::path::Path::new("/home/user/Projects");
-        let project =
-            std::path::Path::new("/home/user/Projects/gitlab/org/ns/group/my-repo");
+        let project = std::path::Path::new("/home/user/Projects/gitlab/org/ns/group/my-repo");
         // skip=3 means gitlab/org/ns are noise → tag is group
         assert_eq!(compute_tags(project, root, 3), vec!["group"]);
     }
@@ -382,13 +374,8 @@ mod tests {
     #[test]
     fn tags_multiple_segments_when_deep_enough() {
         let root = std::path::Path::new("/home/user/Projects");
-        let project = std::path::Path::new(
-            "/home/user/Projects/gitlab/org/ns/infra/images/my-app",
-        );
-        assert_eq!(
-            compute_tags(project, root, 3),
-            vec!["infra", "images"]
-        );
+        let project = std::path::Path::new("/home/user/Projects/gitlab/org/ns/infra/images/my-app");
+        assert_eq!(compute_tags(project, root, 3), vec!["infra", "images"]);
     }
 
     // ── path_skip_map / trie_skip_depth ──────────────────────────────────────
@@ -436,8 +423,8 @@ mod tests {
         // Must NOT be treated as a pass-through even though the trie has one child.
         let root = std::path::Path::new("/Projects");
         let paths = vec![
-            "/Projects/github/group/repo-a".to_string(),        // direct leaf
-            "/Projects/github/group/repo-b".to_string(),        // direct leaf
+            "/Projects/github/group/repo-a".to_string(), // direct leaf
+            "/Projects/github/group/repo-b".to_string(), // direct leaf
             "/Projects/github/group/sub-group/repo-c".to_string(), // nested
         ];
         let map = path_skip_map(&paths, root);
