@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-`vscode-pmu` is a Rust CLI that keeps the VSCode Project Manager extension's `projects.json` in sync with git repositories discovered under a configurable root directory. It supports on-demand scanning, a launchd daemon for real-time watching, and a git hook for automatic refresh on checkout.
+`vscode-pmu` is a Rust CLI that keeps the VSCode Project Manager extension's `projects.json` in sync with git
+repositories discovered under a configurable root directory. It supports on-demand scanning, a launchd daemon
+for real-time watching, and a git hook for automatic refresh on checkout.
 
 **Binary:** `vscode-pmu`  
 **Language:** Rust (edition 2021)  

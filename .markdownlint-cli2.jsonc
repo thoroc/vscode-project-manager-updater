@@ -2,7 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.22.0/schema/markdownlint-cli2-config-schema.json",
 	"config": {
 		"default": true,
-		"MD013": false,
+		"MD013": { "line_length": 120, "tables": false, "code_blocks": false },
 		"MD033": false,
 		"MD060": true
 	}

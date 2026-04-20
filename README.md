@@ -1,17 +1,21 @@
 # vscode-project-manager-updater
 
-A compiled Rust CLI that keeps the [VSCode Project Manager](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager) `projects.json` in sync with git repositories under a configurable root directory (default: `~/Projects`).
+A compiled Rust CLI that keeps the [VSCode Project Manager](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager)
+`projects.json` in sync with git repositories under a configurable root directory (default: `~/Projects`).
 
 ## How it works
 
-`vscode-pmu` scans a root directory (default: `~/Projects`) for git repositories and reconciles them into VSCode's `projects.json`. Two modes:
+`vscode-pmu` scans a root directory (default: `~/Projects`) for git repositories and reconciles them into
+VSCode's `projects.json`. Two modes:
 
 - **On-demand** — run `vscode-pmu scan` or `vscode-pmu refresh` manually
-- **Daemon** — run `vscode-pmu daemon install` to register a launchd agent that starts at login and watches for filesystem changes in real time
+- **Daemon** — run `vscode-pmu daemon install` to register a launchd agent that starts at login and watches
+  for filesystem changes in real time
 
 ### Directory scanning
 
-The scanner walks `<root>` up to **`max_depth` levels deep** (default: 6, configurable in `~/.config/vscode-pmu/config.toml`). The following directories are never descended into:
+The scanner walks `<root>` up to **`max_depth` levels deep** (default: 6, configurable in
+`~/.config/vscode-pmu/config.toml`). The following directories are never descended into:
 
 | Category | Excluded |
 | --- | --- |
@@ -25,12 +29,17 @@ Tags are derived automatically from each project's path using a two-step algorit
 
 #### Step 1 — trie-based pass-through and singleton detection
 
-A prefix trie is built across all discovered paths. For each project, the algorithm walks its own branch and skips a segment when either of these conditions hold:
+A prefix trie is built across all discovered paths. For each project, the algorithm walks its own branch and
+skips a segment when either of these conditions hold:
 
-- **Pass-through**: the segment's subtree fans out to exactly one distinct next-level segment (no branching value at that level).
-- **Singleton leaf-group**: the segment has no sub-levels in the trie and contains only one direct project — a group with a single project adds no filtering value.
+- **Pass-through**: the segment's subtree fans out to exactly one distinct next-level segment
+  (no branching value at that level).
+- **Singleton leaf-group**: the segment has no sub-levels in the trie and contains only one direct project —
+  a group with a single project adds no filtering value.
 
-The VCS host (first segment after `<root>`) is always skipped. The remaining intermediate segments — between the skipped prefix and the project directory name — become the tags. When all intermediate segments are skipped, the host name is used as a fallback.
+The VCS host (first segment after `<root>`) is always skipped. The remaining intermediate segments — between
+the skipped prefix and the project directory name — become the tags. When all intermediate segments are
+skipped, the host name is used as a fallback.
 
 | Path | Condition | Tags |
 | --- | --- | --- |
@@ -39,29 +48,35 @@ The VCS host (first segment after `<root>`) is always skipped. The remaining int
 | `<root>/github/repo` | host skipped, no intermediates | `github` _(fallback)_ |
 | `<root>/my-repo` | direct child of root | _(none)_ |
 
-When one branch is deeper than another the algorithm handles each independently, so projects under a shallow host get simpler tags while deeply nested ones get richer tags.
+When one branch is deeper than another the algorithm handles each independently, so projects under a shallow
+host get simpler tags while deeply nested ones get richer tags.
 
 #### Step 2 — per-host skip floor (optional)
 
-If the trie-derived depth is shallower than desired (e.g. because an organisational namespace contains multiple children that would otherwise appear as tags), you can set a minimum skip depth per host:
+If the trie-derived depth is shallower than desired (e.g. because an organisational namespace contains
+multiple children that would otherwise appear as tags), you can set a minimum skip depth per host:
 
 ```sh
 vscode-pmu config set-skip gitlab 3
 ```
 
-The effective skip is `max(trie_derived, configured_floor)`. This keeps organisational prefixes out of tags without hardcoding any path values in the source code.
+The effective skip is `max(trie_derived, configured_floor)`. This keeps organisational prefixes out of tags
+without hardcoding any path values in the source code.
 
 See the [`config`](#config-set-skip--config-show) commands for details.
 
 ### Cache
 
-After each filesystem walk the discovered paths are written to `~/.cache/vscode-pmu/<sanitized-root>.cache`. Subsequent `scan` calls reuse this cache for 24 hours, making them near-instant. Use `refresh` to force a new walk. Different `--root` values maintain independent caches.
+After each filesystem walk the discovered paths are written to `~/.cache/vscode-pmu/<sanitized-root>.cache`.
+Subsequent `scan` calls reuse this cache for 24 hours, making them near-instant. Use `refresh` to force a
+new walk. Different `--root` values maintain independent caches.
 
 ## Prerequisites
 
 - macOS (launchd integration is macOS-only)
 - [Rust toolchain](https://rustup.rs) (to build from source)
-- VSCode with the [Project Manager extension](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager) installed
+- VSCode with the [Project Manager extension](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager)
+  installed
 
 ## Installation
 
@@ -103,7 +118,8 @@ Once the binary is on `$PATH`, register it as a launchd user agent so it starts 
 vscode-pmu daemon install
 ```
 
-This embeds the binary path into a plist at `~/Library/LaunchAgents/com.thomasroche.vscode-project-manager-updater.plist` and loads the agent.
+This embeds the binary path into a plist at
+`~/Library/LaunchAgents/com.thomasroche.vscode-project-manager-updater.plist` and loads the agent.
 
 > **Note:** run `vscode-pmu daemon install` again any time you update the binary to refresh the embedded path in the plist.
 
@@ -153,7 +169,8 @@ vscode-pmu --root /srv/repos refresh
 
 ### scan
 
-Reconciles `projects.json` with `<root>` (default `~/Projects`). Uses the 24-hour path cache when available; falls back to a full walk otherwise.
+Reconciles `projects.json` with `<root>` (default `~/Projects`). Uses the 24-hour path cache when available;
+falls back to a full walk otherwise.
 
 ```sh
 vscode-pmu scan
@@ -206,7 +223,8 @@ vscode-pmu daemon remove    # unload agent and remove plist
 
 Manages the git template hook so that every `git clone` automatically registers the new repo with VSCode Project Manager.
 
-`hooks install` writes the `post-checkout` hook and sets `git config --global init.templateDir`. `hooks remove` reverses both steps.
+`hooks install` writes the `post-checkout` hook and sets `git config --global init.templateDir`.
+`hooks remove` reverses both steps.
 
 | Path | Purpose |
 | --- | --- |
@@ -254,7 +272,9 @@ gitlab = 3
 github = 1
 ```
 
-**`[tag_rename]`** — Substitutes tag values after derivation. The key is the display label; the value is a list of raw path segments that should map to it. Multiple segments (e.g. different usernames across hosts) can share one label.
+**`[tag_rename]`** — Substitutes tag values after derivation. The key is the display label; the value is a
+list of raw path segments that should map to it. Multiple segments (e.g. different usernames across hosts)
+can share one label.
 
 ```toml
 [tag_rename]
