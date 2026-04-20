@@ -322,12 +322,4 @@ vscode-project-manager-updater/
 
 ## Development
 
-```sh
-# Run all unit tests
-cargo test
-
-# Debug build
-cargo build
-```
-
-Tests use `tempfile` for isolated file I/O and never touch the real `projects.json` or path cache.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, lefthook configuration, and build commands.

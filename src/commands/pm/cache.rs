@@ -13,7 +13,13 @@ pub fn cache_path_for(root: &Path) -> PathBuf {
     let sanitized = root
         .to_string_lossy()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
     let cache_dir = dirs::home_dir()
         .expect("no home dir")
@@ -58,8 +64,7 @@ pub(crate) fn write_paths_to(path: &Path, paths: &[String]) -> Result<()> {
 
 pub(crate) fn delete_at(path: &Path) -> Result<()> {
     if path.exists() {
-        fs::remove_file(path)
-            .with_context(|| format!("cannot delete cache {}", path.display()))?;
+        fs::remove_file(path).with_context(|| format!("cannot delete cache {}", path.display()))?;
         eprintln!(
             "[{}] Cache deleted.",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
@@ -180,11 +185,32 @@ mod tests {
     #[test]
     fn update_paths_writes_root_paths_from_projects() {
         let f = NamedTempFile::new().unwrap();
-        let projects = vec![
-            Project { name: "foo".to_string(), root_path: "/projects/foo".to_string(), paths: vec![], tags: vec![], enabled: true, profile: String::new() },
-            Project { name: "bar".to_string(), root_path: "/projects/bar".to_string(), paths: vec![], tags: vec![], enabled: true, profile: String::new() },
+        let projects = [
+            Project {
+                name: "foo".to_string(),
+                root_path: "/projects/foo".to_string(),
+                paths: vec![],
+                tags: vec![],
+                enabled: true,
+                profile: String::new(),
+            },
+            Project {
+                name: "bar".to_string(),
+                root_path: "/projects/bar".to_string(),
+                paths: vec![],
+                tags: vec![],
+                enabled: true,
+                profile: String::new(),
+            },
         ];
-        write_paths_to(f.path(), &projects.iter().map(|p| p.root_path.clone()).collect::<Vec<_>>()).unwrap();
+        write_paths_to(
+            f.path(),
+            &projects
+                .iter()
+                .map(|p| p.root_path.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         let got = read_paths_from(f.path()).unwrap();
         assert_eq!(got, vec!["/projects/foo", "/projects/bar"]);
     }
