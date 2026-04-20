@@ -1,0 +1,9 @@
+{
+	"$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.22.0/schema/markdownlint-cli2-config-schema.json",
+	"config": {
+		"default": true,
+		"MD013": false,
+		"MD033": false,
+		"MD060": true
+	}
+}

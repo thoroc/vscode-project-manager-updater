@@ -10,7 +10,7 @@
 
 ## Repository Structure
 
-```
+```text
 src/
 ├── main.rs                  # Entry point — parses CLI and dispatches
 └── commands/pm/
@@ -27,7 +27,7 @@ src/
 ## CLI Commands
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `vscode-pmu scan` | Scan root dir, reconcile projects.json (uses 24h cache) |
 | `vscode-pmu refresh` | Force full rescan, ignoring cache |
 | `vscode-pmu daemon install` | Register launchd agent for real-time watching |
@@ -77,7 +77,7 @@ gitlab = 3
 ## Key Files (outside the repo)
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `~/Library/Application Support/Code/User/globalStorage/alefragnani.project-manager/projects.json` | VSCode Project Manager state (backed up as `.bak` before every write) |
 | `~/.cache/vscode-pmu/<sanitized-root>.cache` | 24h scan cache |
 | `~/.config/vscode-pmu/config.toml` | Per-host skip depths, tag renames, max_depth |

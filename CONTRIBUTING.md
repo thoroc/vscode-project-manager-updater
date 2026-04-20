@@ -5,12 +5,14 @@
 Install [lefthook](https://github.com/evilmartians/lefthook) to run pre-commit and pre-push checks locally.
 
 **Via mise (recommended):**
+
 ```sh
 mise install
 lefthook install
 ```
 
 **Directly:**
+
 ```sh
 # macOS
 brew install lefthook
