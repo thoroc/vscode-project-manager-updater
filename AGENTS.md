@@ -28,16 +28,16 @@ src/
 
 ## CLI Commands
 
-| Command | Description |
-| --- | --- |
-| `vscode-pmu scan` | Scan root dir, reconcile projects.json (uses 24h cache) |
-| `vscode-pmu refresh` | Force full rescan, ignoring cache |
-| `vscode-pmu daemon install` | Register launchd agent for real-time watching |
-| `vscode-pmu daemon uninstall` | Remove launchd agent |
-| `vscode-pmu hooks install` | Install git post-checkout hook |
-| `vscode-pmu hooks remove` | Remove git post-checkout hook |
-| `vscode-pmu config set-skip <host> <depth>` | Set minimum tag skip depth for a host |
-| `vscode-pmu config show` | Print current configuration |
+| Command                                      | Description                                              |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `vscode-pmu scan`                            | Scan root dir, reconcile projects.json (uses 24h cache)  |
+| `vscode-pmu refresh`                         | Force full rescan, ignoring cache                        |
+| `vscode-pmu daemon install`                  | Register launchd agent for real-time watching            |
+| `vscode-pmu daemon uninstall`                | Remove launchd agent                                     |
+| `vscode-pmu hooks install`                   | Install git post-checkout hook                           |
+| `vscode-pmu hooks remove`                    | Remove git post-checkout hook                            |
+| `vscode-pmu config set-skip <host> <depth>`  | Set minimum tag skip depth for a host                    |
+| `vscode-pmu config show`                     | Print current configuration                              |
 
 ## Build & Test
 
@@ -78,11 +78,11 @@ gitlab = 3
 
 ## Key Files (outside the repo)
 
-| File | Purpose |
-| --- | --- |
-| `~/Library/Application Support/Code/User/globalStorage/alefragnani.project-manager/projects.json` | VSCode Project Manager state (backed up as `.bak` before every write) |
-| `~/.cache/vscode-pmu/<sanitized-root>.cache` | 24h scan cache |
-| `~/.config/vscode-pmu/config.toml` | Per-host skip depths, tag renames, max_depth |
+| File                                                                                               | Purpose                                                                |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `~/Library/Application Support/Code/User/globalStorage/alefragnani.project-manager/projects.json`  | VSCode Project Manager state (backed up as `.bak` before every write)  |
+| `~/.cache/vscode-pmu/<sanitized-root>.cache`                                                       | 24h scan cache                                                         |
+| `~/.config/vscode-pmu/config.toml`                                                                 | Per-host skip depths, tag renames, max_depth                           |
 
 ## Tag Derivation Algorithm
 

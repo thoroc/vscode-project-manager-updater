@@ -17,11 +17,11 @@ VSCode's `projects.json`. Two modes:
 The scanner walks `<root>` up to **`max_depth` levels deep** (default: 6, configurable in
 `~/.config/vscode-pmu/config.toml`). The following directories are never descended into:
 
-| Category | Excluded |
-| --- | --- |
-| Hidden directories | anything starting with `.` (except `.git` itself) |
-| Package managers | `node_modules`, `vendor` |
-| Build artifacts | `build`, `dist`, `out`, `debug`, `release`, `target`, `coverage` |
+| Category           | Excluded                                                          |
+| ------------------ | ----------------------------------------------------------------- |
+| Hidden directories | anything starting with `.` (except `.git` itself)                 |
+| Package managers   | `node_modules`, `vendor`                                          |
+| Build artifacts    | `build`, `dist`, `out`, `debug`, `release`, `target`, `coverage`  |
 
 ### Tag derivation
 
@@ -41,12 +41,12 @@ The VCS host (first segment after `<root>`) is always skipped. The remaining int
 the skipped prefix and the project directory name — become the tags. When all intermediate segments are
 skipped, the host name is used as a fallback.
 
-| Path | Condition | Tags |
-| --- | --- | --- |
-| `<root>/github/org/repo-a` and `.../org/repo-b` | `org` has 2 projects → kept | `org` |
-| `<root>/github/solo-org/only-repo` | `solo-org` has 1 project → singleton, skipped | `github` _(fallback)_ |
-| `<root>/github/repo` | host skipped, no intermediates | `github` _(fallback)_ |
-| `<root>/my-repo` | direct child of root | _(none)_ |
+| Path                                             | Condition                                      | Tags                  |
+| ------------------------------------------------ | ---------------------------------------------- | --------------------- |
+| `<root>/github/org/repo-a` and `.../org/repo-b`  | `org` has 2 projects → kept                    | `org`                 |
+| `<root>/github/solo-org/only-repo`               | `solo-org` has 1 project → singleton, skipped  | `github` _(fallback)_ |
+| `<root>/github/repo`                             | host skipped, no intermediates                 | `github` _(fallback)_ |
+| `<root>/my-repo`                                 | direct child of root                           | _(none)_              |
 
 When one branch is deeper than another the algorithm handles each independently, so projects under a shallow
 host get simpler tags while deeply nested ones get richer tags.
@@ -209,10 +209,10 @@ vscode-pmu refresh
 
 Manages a launchd user agent that runs `vscode-pmu watch` automatically at login.
 
-| Path | Purpose |
-| --- | --- |
-| `~/Library/LaunchAgents/com.thomasroche.vscode-project-manager-updater.plist` | launchd plist |
-| `~/.cache/vscode-pmu/watch.log` | daemon log |
+| Path                                                                           | Purpose       |
+| ------------------------------------------------------------------------------ | ------------- |
+| `~/Library/LaunchAgents/com.thomasroche.vscode-project-manager-updater.plist`  | launchd plist |
+| `~/.cache/vscode-pmu/watch.log`                                                | daemon log    |
 
 ```sh
 vscode-pmu daemon install   # write plist and load agent
@@ -226,9 +226,9 @@ Manages the git template hook so that every `git clone` automatically registers 
 `hooks install` writes the `post-checkout` hook and sets `git config --global init.templateDir`.
 `hooks remove` reverses both steps.
 
-| Path | Purpose |
-| --- | --- |
-| `~/.config/git/templates/hooks/post-checkout` | hook invoked by git after every clone |
+| Path                                           | Purpose                               |
+| ---------------------------------------------- | ------------------------------------- |
+| `~/.config/git/templates/hooks/post-checkout`  | hook invoked by git after every clone |
 
 ```sh
 vscode-pmu hooks install   # write hook and set init.templateDir
@@ -281,19 +281,19 @@ can share one label.
 personal = ["<username-a>", "<username-b>"]
 ```
 
-| Path | Derived tag | After rename |
-| ---- | ----------- | ------------ |
-| `github/<username-a>/repo` | `<username-a>` | `personal` |
-| `github/<username-b>/repo` | `<username-b>` | `personal` |
-| `github/some-org/repo` | `some-org` | _(unchanged)_ |
+| Path                       | Derived tag    | After rename  |
+| -------------------------- | -------------- | ------------- |
+| `github/<username-a>/repo` | `<username-a>` | `personal`    |
+| `github/<username-b>/repo` | `<username-b>` | `personal`    |
+| `github/some-org/repo`     | `some-org`     | _(unchanged)_ |
 
 After changing the config, run `vscode-pmu refresh` to retag all managed projects and pick up the new scan depth.
 
-| Path | Config | Effective skip | Tags |
-| --- | --- | --- | --- |
-| `gitlab/org/ns/team/repo` | `gitlab = 3` | 3 | `team` |
-| `gitlab/org/ns/infra/images/app` | `gitlab = 3` | 3 | `infra`, `images` |
-| `github/my-repo` | `github = 1` | 1 | `github` _(fallback)_ |
+| Path                              | Config       | Effective skip | Tags                  |
+| --------------------------------- | ------------ | -------------- | --------------------- |
+| `gitlab/org/ns/team/repo`         | `gitlab = 3` | 3              | `team`                |
+| `gitlab/org/ns/infra/images/app`  | `gitlab = 3` | 3              | `infra`, `images`     |
+| `github/my-repo`                  | `github = 1` | 1              | `github` _(fallback)_ |
 
 ## projects.json
 
