@@ -8,6 +8,10 @@ pre-commit:
       glob: "*.{rs}"
       run: cargo clippy --all-targets --all-features -- -D warnings
       stage_fixed: true
+    markdownlint:
+      glob: "*.md"
+      run: markdownlint-cli2 --fix {staged_files}
+      stage_fixed: true
 
 pre-push:
   commands:

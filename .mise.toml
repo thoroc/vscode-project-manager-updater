@@ -1,2 +1,3 @@
 [tools]
 lefthook = "latest"
+"npm:markdownlint-cli2" = "latest"
