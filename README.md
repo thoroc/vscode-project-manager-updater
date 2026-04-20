@@ -282,7 +282,7 @@ personal = ["<username-a>", "<username-b>"]
 ```
 
 | Path | Derived tag | After rename |
-| --- | --- | --- |
+| ---- | ----------- | ------------ |
 | `github/<username-a>/repo` | `<username-a>` | `personal` |
 | `github/<username-b>/repo` | `<username-b>` | `personal` |
 | `github/some-org/repo` | `some-org` | _(unchanged)_ |
