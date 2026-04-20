@@ -2,16 +2,22 @@ pub mod cache;
 pub mod config;
 pub mod hook;
 pub mod launchd;
+pub(crate) mod log;
 pub mod projects;
 pub mod scan;
 pub mod watch;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-fn default_root() -> PathBuf {
-    dirs::home_dir().expect("no home dir").join("Projects")
+/// The subcommand name used internally by the launchd daemon.
+pub(crate) const WATCH_SUBCOMMAND: &str = "watch";
+
+fn default_root() -> Result<PathBuf> {
+    Ok(dirs::home_dir()
+        .context("cannot determine home directory")?
+        .join("Projects"))
 }
 
 #[derive(Parser)]
@@ -97,7 +103,7 @@ pub enum ConfigAction {
 }
 
 pub fn run(cli: Cli) -> Result<()> {
-    let root = cli.root.unwrap_or_else(default_root);
+    let root = cli.root.map(Ok).unwrap_or_else(default_root)?;
     match cli.subcommand {
         Subcommands::Scan => scan::run_scan(&root),
         Subcommands::Add { path } => projects::add(path.as_deref(), &root),

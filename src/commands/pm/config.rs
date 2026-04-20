@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-pub fn config_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("no home dir")
-        .join(".config/vscode-pmu/config.toml")
+use super::log::log_info;
+
+pub fn config_path() -> Result<PathBuf> {
+    Ok(dirs::home_dir()
+        .context("cannot determine home directory")?
+        .join(".config/vscode-pmu/config.toml"))
 }
 
 const DEFAULT_MAX_DEPTH: usize = 6;
@@ -71,28 +73,37 @@ impl Config {
         self.max_depth.unwrap_or(DEFAULT_MAX_DEPTH)
     }
 
-    /// Applies `tag_rename` substitutions to a list of derived tags.
+    /// Builds the reverse lookup (`raw_seg → display_label`) from `tag_rename`.
     ///
-    /// The config maps `display_label = ["raw_seg", …]`; this builds the
-    /// reverse lookup (`raw_seg → display_label`) at call time.
-    pub fn rename_tags(&self, tags: Vec<String>) -> Vec<String> {
-        // Build reverse map: raw segment → display label
-        let reverse: HashMap<&str, &str> = self
-            .tag_rename
+    /// Build this once per scan operation and pass it to `apply_rename_map`
+    /// for each project to avoid reconstructing the map per call.
+    pub fn build_rename_map(&self) -> HashMap<String, String> {
+        self.tag_rename
             .iter()
             .flat_map(|(label, sources)| {
-                sources
-                    .iter()
-                    .map(move |src| (src.as_str(), label.as_str()))
+                sources.iter().map(move |src| (src.clone(), label.clone()))
             })
-            .collect();
-        tags.into_iter()
-            .map(|t| reverse.get(t.as_str()).map(|&s| s.to_owned()).unwrap_or(t))
             .collect()
     }
 
+    /// Applies a pre-built reverse rename map to a list of derived tags.
+    pub fn apply_rename_map(tags: Vec<String>, map: &HashMap<String, String>) -> Vec<String> {
+        tags.into_iter()
+            .map(|t| map.get(&t).cloned().unwrap_or(t))
+            .collect()
+    }
+
+    /// Applies `tag_rename` substitutions to a list of derived tags.
+    ///
+    /// Prefer `build_rename_map` + `apply_rename_map` when renaming many
+    /// projects in a loop to avoid rebuilding the reverse map each time.
+    pub fn rename_tags(&self, tags: Vec<String>) -> Vec<String> {
+        let map = self.build_rename_map();
+        Self::apply_rename_map(tags, &map)
+    }
+
     pub fn load() -> Result<Self> {
-        let path = config_path();
+        let path = config_path()?;
         if !path.exists() {
             // Create the file with the commented template so users can
             // discover the available options without reading the docs.
@@ -102,11 +113,7 @@ impl Config {
             }
             fs::write(&path, DEFAULT_TEMPLATE)
                 .with_context(|| format!("cannot write {}", path.display()))?;
-            eprintln!(
-                "[{}] Created default config at {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                path.display()
-            );
+            log_info!("Created default config at {}", path.display());
             return Ok(Self::default());
         }
         let content =
@@ -115,7 +122,7 @@ impl Config {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = config_path();
+        let path = config_path()?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("cannot create {}", parent.display()))?;
@@ -134,17 +141,12 @@ pub fn run_set_skip(host: &str, depth: usize) -> Result<()> {
     let mut cfg = Config::load()?;
     cfg.host_skip.insert(host.to_string(), depth);
     cfg.save()?;
-    eprintln!(
-        "[{}] Set skip depth for '{}' to {}.",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        host,
-        depth
-    );
+    log_info!("Set skip depth for '{}' to {}.", host, depth);
     Ok(())
 }
 
 pub fn run_show() -> Result<()> {
-    let path = config_path();
+    let path = config_path()?;
     let cfg = Config::load()?;
     println!("Config file: {}", path.display());
     println!("max_depth = {}", cfg.scan_max_depth());

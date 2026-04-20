@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 
 use super::cache;
 use super::config::Config;
+use super::log::log_info;
 
-pub fn projects_json_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("no home dir")
-        .join("Library/Application Support/Code/User/globalStorage/alefragnani.project-manager/projects.json")
+pub fn projects_json_path() -> Result<PathBuf> {
+    Ok(dirs::home_dir()
+        .context("cannot determine home directory")?
+        .join("Library/Application Support/Code/User/globalStorage/alefragnani.project-manager/projects.json"))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -218,38 +219,21 @@ pub fn write_projects(path: &Path, projects: &[Project]) -> Result<()> {
     Ok(())
 }
 
-pub fn add(path: Option<&Path>, root: &Path) -> Result<()> {
-    let target: PathBuf = match path {
-        Some(p) => p.to_path_buf(),
-        None => {
-            let input: String = Input::new()
-                .with_prompt("Path to git repository")
-                .interact_text()?;
-            PathBuf::from(input.trim())
-        }
-    };
-
-    let resolved = fs::canonicalize(&target)
-        .with_context(|| format!("cannot resolve {}", target.display()))?;
+pub(crate) fn add_to(path: &Path, root: &Path, projects_path: &Path, cfg: &Config) -> Result<()> {
+    let resolved = std::fs::canonicalize(path)
+        .with_context(|| format!("cannot resolve {}", path.display()))?;
     if !resolved.join(".git").exists() {
         anyhow::bail!("{} does not contain a .git directory", resolved.display());
     }
 
-    let projects_path = projects_json_path();
-    let mut projects = read_projects(&projects_path)?;
+    let mut projects = read_projects(projects_path)?;
 
     let path_str = resolved.to_string_lossy().to_string();
     if projects.iter().any(|p| p.root_path == path_str) {
-        eprintln!(
-            "[{}] Project already present: {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            path_str
-        );
+        log_info!("Project already present: {}", path_str);
         return Ok(());
     }
 
-    // Derive skip depth using the trie-based algorithm over all managed paths
-    // plus the new one.
     let new_path_str = resolved.to_string_lossy().into_owned();
     let mut candidate_paths: Vec<String> = projects
         .iter()
@@ -265,24 +249,46 @@ pub fn add(path: Option<&Path>, root: &Path) -> Result<()> {
         .and_then(|rel| rel.components().next())
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .unwrap_or_default();
-    let cfg = Config::load()?;
     let skip = trie_skip.max(cfg.floor_for(&host));
     let tags = cfg.rename_tags(compute_tags(&resolved, root, skip));
     let project = Project::new(resolved.clone(), tags);
-    eprintln!(
-        "[{}] Adding project: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        path_str
-    );
+    log_info!("Adding project: {}", path_str);
     projects.push(project);
-    write_projects(&projects_path, &projects)?;
+    write_projects(projects_path, &projects)?;
     cache::update_paths(root, &projects)?;
     Ok(())
 }
 
+pub(crate) fn remove_from(name: &str, root: &Path, projects_path: &Path) -> Result<bool> {
+    let mut projects = read_projects(projects_path)?;
+    let before = projects.len();
+    projects.retain(|p| !(Path::new(&p.root_path).starts_with(root) && p.name == name));
+    if projects.len() == before {
+        return Ok(false);
+    }
+    write_projects(projects_path, &projects)?;
+    cache::update_paths(root, &projects)?;
+    Ok(true)
+}
+
+pub fn add(path: Option<&Path>, root: &Path) -> Result<()> {
+    let target: PathBuf = match path {
+        Some(p) => p.to_path_buf(),
+        None => {
+            let input: String = Input::new()
+                .with_prompt("Path to git repository")
+                .interact_text()?;
+            PathBuf::from(input.trim())
+        }
+    };
+    let projects_path = projects_json_path()?;
+    let cfg = Config::load()?;
+    add_to(&target, root, &projects_path, &cfg)
+}
+
 pub fn remove(name: Option<&str>, root: &Path) -> Result<()> {
-    let projects_path = projects_json_path();
-    let mut projects = read_projects(&projects_path)?;
+    let projects_path = projects_json_path()?;
+    let projects = read_projects(&projects_path)?;
 
     let managed: Vec<String> = projects
         .iter()
@@ -291,11 +297,7 @@ pub fn remove(name: Option<&str>, root: &Path) -> Result<()> {
         .collect();
 
     if managed.is_empty() {
-        eprintln!(
-            "[{}] No managed projects found under {}.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            root.display()
-        );
+        log_info!("No managed projects found under {}.", root.display());
         return Ok(());
     }
 
@@ -310,25 +312,11 @@ pub fn remove(name: Option<&str>, root: &Path) -> Result<()> {
         }
     };
 
-    let before = projects.len();
-    projects.retain(|p| !(Path::new(&p.root_path).starts_with(root) && p.name == target));
-
-    if projects.len() == before {
-        eprintln!(
-            "[{}] Project not found: {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            target
-        );
-        return Ok(());
+    if remove_from(&target, root, &projects_path)? {
+        log_info!("Removed project: {}", target);
+    } else {
+        log_info!("Project not found: {}", target);
     }
-
-    eprintln!(
-        "[{}] Removed project: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        target
-    );
-    write_projects(&projects_path, &projects)?;
-    cache::update_paths(root, &projects)?;
     Ok(())
 }
 
@@ -584,6 +572,101 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert!(parsed.is_array());
+    }
+
+    // ── add_to ────────────────────────────────────────────────────────────────
+
+    fn make_git_repo(base: &std::path::Path, rel: &str) -> PathBuf {
+        let repo = base.join(rel);
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        repo
+    }
+
+    #[test]
+    fn add_to_adds_new_project() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let repo = make_git_repo(&root, "github/org/my-repo");
+        let projects_path = tmp.path().join("projects.json");
+        write_projects(&projects_path, &[]).unwrap();
+        let cfg = super::super::config::Config::default();
+        add_to(&repo, &root, &projects_path, &cfg).unwrap();
+        let loaded = read_projects(&projects_path).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "my-repo");
+    }
+
+    #[test]
+    fn add_to_is_no_op_when_already_present() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let repo = make_git_repo(&root, "github/org/my-repo");
+        let projects_path = tmp.path().join("projects.json");
+        write_projects(&projects_path, &[]).unwrap();
+        let cfg = super::super::config::Config::default();
+        add_to(&repo, &root, &projects_path, &cfg).unwrap();
+        add_to(&repo, &root, &projects_path, &cfg).unwrap();
+        let loaded = read_projects(&projects_path).unwrap();
+        assert_eq!(loaded.len(), 1, "duplicate add must be a no-op");
+    }
+
+    #[test]
+    fn add_to_errors_when_no_git_dir() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let not_a_repo = root.join("not-a-repo");
+        fs::create_dir_all(&not_a_repo).unwrap();
+        let projects_path = tmp.path().join("projects.json");
+        write_projects(&projects_path, &[]).unwrap();
+        let cfg = super::super::config::Config::default();
+        let result = add_to(&not_a_repo, &root, &projects_path, &cfg);
+        assert!(result.is_err(), "should error when .git is absent");
+    }
+
+    // ── remove_from ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn remove_from_removes_existing_project() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let projects_path = tmp.path().join("projects.json");
+        let project = Project::new(root.join("my-repo"), vec![]);
+        write_projects(&projects_path, &[project]).unwrap();
+        let removed = remove_from("my-repo", &root, &projects_path).unwrap();
+        assert!(removed);
+        let loaded = read_projects(&projects_path).unwrap();
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn remove_from_returns_false_when_project_absent() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let projects_path = tmp.path().join("projects.json");
+        write_projects(&projects_path, &[]).unwrap();
+        let removed = remove_from("nonexistent", &root, &projects_path).unwrap();
+        assert!(!removed);
+    }
+
+    #[test]
+    fn remove_from_preserves_projects_outside_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let projects_path = tmp.path().join("projects.json");
+        let inside = Project::new(root.join("my-repo"), vec![]);
+        let outside = Project {
+            name: "external".to_string(),
+            root_path: "/some/other/path/external".to_string(),
+            paths: vec![],
+            tags: vec![],
+            enabled: true,
+            profile: String::new(),
+        };
+        write_projects(&projects_path, &[inside, outside]).unwrap();
+        remove_from("my-repo", &root, &projects_path).unwrap();
+        let loaded = read_projects(&projects_path).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "external");
     }
 
     // ── serde defaults ────────────────────────────────────────────────────────

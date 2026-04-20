@@ -3,6 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use super::log::log_info;
+use super::WATCH_SUBCOMMAND;
+
 const PLIST_LABEL: &str = "com.thomasroche.vscode-project-manager-updater";
 
 fn plist_path() -> Result<PathBuf> {
@@ -26,7 +29,7 @@ fn build_plist(binary_path: &str, log_path: &str) -> String {
   <key>ProgramArguments</key>
   <array>
     <string>{binary_path}</string>
-    <string>watch</string>
+    <string>{WATCH_SUBCOMMAND}</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -77,20 +80,9 @@ pub fn install() -> Result<()> {
         anyhow::bail!("launchctl load failed: {stderr}");
     }
 
-    eprintln!(
-        "[{}] Installed and loaded {PLIST_LABEL}.",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    );
-    eprintln!(
-        "[{}] Plist: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        plist_path.display()
-    );
-    eprintln!(
-        "[{}] Logs: {}/watch.log",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        log_path_str
-    );
+    log_info!("Installed and loaded {PLIST_LABEL}.");
+    log_info!("Plist: {}", plist_path.display());
+    log_info!("Logs: {}/watch.log", log_path_str);
     Ok(())
 }
 
@@ -105,24 +97,15 @@ pub fn remove() -> Result<()> {
 
         if !unload_output.status.success() {
             let stderr = String::from_utf8_lossy(&unload_output.stderr);
-            eprintln!(
-                "[{}] Warning: launchctl unload: {stderr}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-            );
+            log_info!("Warning: launchctl unload: {stderr}");
         }
 
         fs::remove_file(&plist_path)
             .with_context(|| format!("cannot remove plist {}", plist_path.display()))?;
 
-        eprintln!(
-            "[{}] Uninstalled {PLIST_LABEL}.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        log_info!("Uninstalled {PLIST_LABEL}.");
     } else {
-        eprintln!(
-            "[{}] Plist not found — nothing to uninstall.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        log_info!("Plist not found — nothing to uninstall.");
     }
     Ok(())
 }

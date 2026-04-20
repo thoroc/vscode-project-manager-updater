@@ -3,6 +3,7 @@ use walkdir::WalkDir;
 
 use super::cache;
 use super::config::Config;
+use super::log::log_info;
 use super::projects::{
     compute_tags, path_skip_map, projects_json_path, read_projects, write_projects, Project,
 };
@@ -80,33 +81,19 @@ fn effective_skip(abs_path: &str, root: &std::path::Path, trie_skip: usize, cfg:
 }
 
 pub fn run_scan(root: &std::path::Path) -> Result<()> {
-    let projects_path = projects_json_path();
+    let projects_path = projects_json_path()?;
     let cfg = Config::load()?;
 
-    eprintln!(
-        "[{}] Starting scan of {}…",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        root.display()
-    );
+    log_info!("Starting scan of {}…", root.display());
 
-    let discovered: Vec<String> = if cache::is_fresh(root) {
-        eprintln!(
-            "[{}] Using fresh cache.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+    let discovered: Vec<String> = if cache::is_fresh(root)? {
+        log_info!("Using fresh cache.");
         cache::read_paths(root)?
     } else {
-        eprintln!(
-            "[{}] Cache stale or absent — walking filesystem…",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        log_info!("Cache stale or absent — walking filesystem…");
         let paths = discover_git_repos_in(root, cfg.scan_max_depth());
         cache::write_paths(root, &paths)?;
-        eprintln!(
-            "[{}] Found {} git repos.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            paths.len()
-        );
+        log_info!("Found {} git repos.", paths.len());
         paths
     };
 
@@ -129,13 +116,14 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
         v
     };
     let skip_map = path_skip_map(&all_paths, root);
+    let rename_map = cfg.build_rename_map();
 
     // Retag existing inside projects with the refined algorithm.
     for project in &mut inside {
         let trie_skip = skip_map.get(&project.root_path).copied().unwrap_or(1);
         let skip = effective_skip(&project.root_path, root, trie_skip, &cfg);
         project.retag(root, skip);
-        project.tags = cfg.rename_tags(std::mem::take(&mut project.tags));
+        project.tags = Config::apply_rename_map(std::mem::take(&mut project.tags), &rename_map);
     }
 
     let existing_paths: std::collections::HashSet<String> =
@@ -147,7 +135,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
             if pb.exists() {
                 let trie_skip = skip_map.get(path_str).copied().unwrap_or(1);
                 let skip = effective_skip(path_str, root, trie_skip, &cfg);
-                let tags = cfg.rename_tags(compute_tags(&pb, root, skip));
+                let tags = Config::apply_rename_map(compute_tags(&pb, root, skip), &rename_map);
                 inside.push(Project::new(pb, tags));
             }
         }
@@ -159,11 +147,7 @@ pub fn run_scan(root: &std::path::Path) -> Result<()> {
     write_projects(&projects_path, &merged)?;
     cache::update_paths(root, &merged)?;
 
-    eprintln!(
-        "[{}] projects.json updated ({} total entries).",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        merged.len()
-    );
+    log_info!("projects.json updated ({} total entries).", merged.len());
     Ok(())
 }
 

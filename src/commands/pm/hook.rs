@@ -4,6 +4,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::log::log_info;
+
 const HOOK_CONTENT: &str = r#"#!/usr/bin/env bash
 # post-checkout hook — auto-register new git clones with VSCode Project Manager
 # Managed by vscode-pmu. Run `vscode-pmu hooks remove` to remove.
@@ -82,20 +84,9 @@ pub fn install() -> Result<()> {
         anyhow::bail!("git config failed: {stderr}");
     }
 
-    eprintln!(
-        "[{}] Hook written: {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        hook.display()
-    );
-    eprintln!(
-        "[{}] git init.templateDir set to {}",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        template_dir.display()
-    );
-    eprintln!(
-        "[{}] New `git clone` operations will auto-register with VSCode Project Manager.",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    );
+    log_info!("Hook written: {}", hook.display());
+    log_info!("git init.templateDir set to {}", template_dir.display());
+    log_info!("New `git clone` operations will auto-register with VSCode Project Manager.");
     Ok(())
 }
 
@@ -108,22 +99,12 @@ pub fn remove() -> Result<()> {
         .output();
 
     if remove_hook_at(&hook)? {
-        eprintln!(
-            "[{}] Hook removed: {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            hook.display()
-        );
+        log_info!("Hook removed: {}", hook.display());
     } else {
-        eprintln!(
-            "[{}] Hook not found — nothing to remove.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        log_info!("Hook not found — nothing to remove.");
     }
 
-    eprintln!(
-        "[{}] git init.templateDir unset.",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    );
+    log_info!("git init.templateDir unset.");
     Ok(())
 }
 

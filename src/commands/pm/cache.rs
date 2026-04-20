@@ -1,30 +1,28 @@
 use anyhow::{Context, Result};
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use super::log::log_info;
 use super::projects::Project;
 
 pub const CACHE_TTL: u64 = 86400;
 
-/// Derive a unique cache file path for the given root directory so that
-/// different roots never share the same cache.
-pub fn cache_path_for(root: &Path) -> PathBuf {
-    let sanitized = root
-        .to_string_lossy()
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '.' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
+/// Derive a unique cache file path for the given root directory.
+///
+/// Uses a hex-encoded hash of the canonical path string so that two paths that
+/// differ only in characters that would otherwise be mapped to the same
+/// sanitised form (e.g. `/foo/bar-baz` vs `/foo/bar_baz`) never collide.
+pub fn cache_path_for(root: &Path) -> Result<PathBuf> {
+    let mut hasher = DefaultHasher::new();
+    root.to_string_lossy().hash(&mut hasher);
+    let hash = format!("{:016x}", hasher.finish());
     let cache_dir = dirs::home_dir()
-        .expect("no home dir")
+        .context("cannot determine home directory")?
         .join(".cache/vscode-pmu");
-    cache_dir.join(format!("{sanitized}.cache"))
+    Ok(cache_dir.join(format!("{hash}.cache")))
 }
 
 // ── Internal path-parameterised helpers (also used by tests) ─────────────────
@@ -65,26 +63,23 @@ pub(crate) fn write_paths_to(path: &Path, paths: &[String]) -> Result<()> {
 pub(crate) fn delete_at(path: &Path) -> Result<()> {
     if path.exists() {
         fs::remove_file(path).with_context(|| format!("cannot delete cache {}", path.display()))?;
-        eprintln!(
-            "[{}] Cache deleted.",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        log_info!("Cache deleted.");
     }
     Ok(())
 }
 
 // ── Public API (keyed to root) ────────────────────────────────────────────────
 
-pub fn is_fresh(root: &Path) -> bool {
-    is_fresh_at(&cache_path_for(root))
+pub fn is_fresh(root: &Path) -> Result<bool> {
+    Ok(is_fresh_at(&cache_path_for(root)?))
 }
 
 pub fn read_paths(root: &Path) -> Result<Vec<String>> {
-    read_paths_from(&cache_path_for(root))
+    read_paths_from(&cache_path_for(root)?)
 }
 
 pub fn write_paths(root: &Path, paths: &[String]) -> Result<()> {
-    write_paths_to(&cache_path_for(root), paths)
+    write_paths_to(&cache_path_for(root)?, paths)
 }
 
 pub fn update_paths(root: &Path, projects: &[Project]) -> Result<()> {
@@ -93,7 +88,7 @@ pub fn update_paths(root: &Path, projects: &[Project]) -> Result<()> {
 }
 
 pub fn delete(root: &Path) -> Result<()> {
-    delete_at(&cache_path_for(root))
+    delete_at(&cache_path_for(root)?)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -106,21 +101,29 @@ mod tests {
     #[test]
     fn cache_path_for_is_under_cache_dir() {
         let expected_dir = dirs::home_dir().unwrap().join(".cache/vscode-pmu");
-        let path = cache_path_for(Path::new("/home/user/Projects"));
+        let path = cache_path_for(Path::new("/home/user/Projects")).unwrap();
         assert_eq!(path.parent().unwrap(), expected_dir);
     }
 
     #[test]
     fn cache_path_for_differs_per_root() {
-        let a = cache_path_for(Path::new("/home/user/Projects"));
-        let b = cache_path_for(Path::new("/home/user/Work"));
+        let a = cache_path_for(Path::new("/home/user/Projects")).unwrap();
+        let b = cache_path_for(Path::new("/home/user/Work")).unwrap();
         assert_ne!(a, b);
     }
 
     #[test]
     fn cache_path_for_is_deterministic() {
         let root = Path::new("/home/user/Projects");
-        assert_eq!(cache_path_for(root), cache_path_for(root));
+        assert_eq!(cache_path_for(root).unwrap(), cache_path_for(root).unwrap());
+    }
+
+    #[test]
+    fn cache_path_for_no_collision_on_char_substitution() {
+        // /foo/bar-baz and /foo/bar_baz used to map to the same sanitised name
+        let a = cache_path_for(Path::new("/foo/bar-baz")).unwrap();
+        let b = cache_path_for(Path::new("/foo/bar_baz")).unwrap();
+        assert_ne!(a, b);
     }
 
     #[test]
